@@ -1,4 +1,4 @@
-gfunction keepMFilesOnly()
+function keepMFilesOnly()
 % 保留所选文件夹（含子文件夹）中的 .m 文件，删除其余所有文件。
 % 使用方法：保存为 keepMFilesOnly.m 后，在命令行运行 keepMFilesOnly
 
