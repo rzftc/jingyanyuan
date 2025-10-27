@@ -8,7 +8,7 @@ function [EVs, t_sim, dt_short, dt_long, P_tar] = initializeFromExcel(filePath)
     data = readtable(filePath); % 读取原始数据表
 
     % --- 基础参数 ---
-    t_sim = 48*60;      % 模拟总时长 (分钟) - 48小时
+    t_sim = 24*60;      % 模拟总时长 (分钟) - 48小时
     dt_short = 5;     % 短时间步长 (分钟)
     dt_long = 30;       % 长时间步长 (分钟)
 
