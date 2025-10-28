@@ -214,12 +214,6 @@ function run_hourly_GA_plus_Greedy()
 
 end
 
-%% -----------------------------------------------------------------------
-%                       局部辅助函数
-% ------------------------------------------------------------------------
-
-
-
 
 %% 局部函数: 其他 (generate_demand, ensureScalar, add_bar_labels - 同前)
 function P_demand = generate_demand(results_agg, field_name, T, avg_raw_power, factors, default_avg)

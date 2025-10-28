@@ -3,7 +3,7 @@ function keepMFilesOnly()
 % 使用方法：保存为 keepMFilesOnly.m 后，在命令行运行 keepMFilesOnly
 
     %---------------- 可调参数（安全优先） ----------------%
-    forceDelete      = false;  % = true 时不再弹出确认对话框，直接删除（谨慎）
+    forceDelete      = true;  % = true 时不再弹出确认对话框，直接删除（谨慎）
     removeEmptyDirs  = false;  % = true 时在删除文件后再尝试清理空文件夹
     useRecycleBin    = true;   % = true 时启用回收站(Windows)；false 为永久删除
     previewListMax   = 30;     % 预览时最多展示多少条将被删除的文件路径
