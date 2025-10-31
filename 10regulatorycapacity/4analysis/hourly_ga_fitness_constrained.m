@@ -31,7 +31,7 @@ function fitness = hourly_ga_fitness_constrained(x, P_ac_hourly, P_ev_hourly, P_
     %% --- MODIFICATION START ---
     % 为上层GA增加 "冗余因子" (安全系数)
     % 迫使GA选择比严格需求更多的设备，为下层MILP提供灵活性以规避PTDF约束
-    safety_factor = 1.2; % 增加20%的功率冗余 (您可以调整此系数)
+    safety_factor = 1; % 增加20%的功率冗余 (您可以调整此系数)
     
     power_shortage = max(0, (max_demand_hourly * safety_factor) - min_potential_power_hourly);
     %% --- MODIFICATION END ---
