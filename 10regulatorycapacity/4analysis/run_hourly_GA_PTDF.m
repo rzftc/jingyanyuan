@@ -61,7 +61,7 @@ function run_hourly_GA_PTDF()
     
     
     % --- 2. 定义仿真参数 ---
-    dt = 5/60; % 假设 5 分钟
+    dt = 0.05; % 假设 5 分钟
     steps_per_hour = round(1/dt);
     num_hours = floor(T / steps_per_hour);
     fprintf('仿真参数: dt=%.3f小时, 每小时步数=%d, 总小时数=%d\n', dt, steps_per_hour, num_hours);
@@ -176,7 +176,7 @@ function run_hourly_GA_PTDF()
                 c_ac_up, c_ev_up, P_req_up_hourly(t_local), ...
                 n_ac_up_hourly, n_ev_up_hourly, ... 
                 Location_AC, Location_EV, PTDF_matrix, ... 
-                P_Line_Base(:, t_global), P_Line_Max, N_bus, N_line, t_global); % 传递 t_global 用于警告
+                P_Line_Base(:, t_global), P_Line_Max, N_bus, N_line); % 传递 t_global 用于警告
             
             if flag_up > 0
                 U_ac_up_h(:, t_local) = u_ac_up;
@@ -198,7 +198,7 @@ function run_hourly_GA_PTDF()
                 c_ac_down, c_ev_down, P_req_down_hourly(t_local), ...
                 n_ac_down_hourly, n_ev_down_hourly, ... 
                 Location_AC, Location_EV, PTDF_matrix, ... 
-                P_Line_Base(:, t_global), P_Line_Max, N_bus, N_line, t_global); % 传递 t_global 用于警告
+                P_Line_Base(:, t_global), P_Line_Max, N_bus, N_line); % 传递 t_global 用于警告
 
             if flag_down > 0
                 U_ac_down_h(:, t_local) = u_ac_down;
