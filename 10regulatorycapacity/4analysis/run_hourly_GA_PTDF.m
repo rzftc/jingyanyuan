@@ -1,4 +1,4 @@
-% run_hourly_GA_PTDF.m
+% run_hourly_GA_PTDF.m (已修正)
 function run_hourly_GA_PTDF()
     %% 内存优化的分层调度脚本 (版本 8: 小时级GA + 分钟级MILP(含PTDF)调度)
     % 架构:
@@ -8,67 +8,93 @@ function run_hourly_GA_PTDF()
     %    同时满足 P_req(t) 约束 和 线路潮流(PTDF)约束。
     clc; close all; clear;
 
-    % --- 1. 加载数据 (同 run_hourly_GA_plus_Greedy.m) ---
-    aggregate_file = 'aggregate_results_slow_synced.mat';
-    individual_file = 'individual_results_slow_synced.mat';
-    fprintf('正在加载聚合数据: %s\n', aggregate_file);
-    if exist(aggregate_file, 'file'); agg_data = load(aggregate_file);
-    else; error('聚合数据文件 %s 未找到。', aggregate_file); end
-    if ~isfield(agg_data, 'results'); error('文件 %s 中未找到 "results" 结构体。', aggregate_file); end
-    results_agg = agg_data.results;
-    fprintf('创建个体数据文件对象 (matfile): %s\n', individual_file);
-    if exist(individual_file, 'file'); m_individual = matfile(individual_file);
-    else; error('个体数据文件 %s 未找到。', individual_file); end
-    fprintf('正在读取维度信息...\n');
-    try % 尝试读取维度
-        s = whos(m_individual); ac_up_info = s(strcmp({s.name}, 'AC_Up_Individual')); ev_up_info = s(strcmp({s.name}, 'EV_Up_Individual'));
-        num_ac_total = ac_up_info.size(1); num_ev_total = ev_up_info.size(1); T = ac_up_info.size(2);
-        if T ~= ev_up_info.size(2) || T ~= length(results_agg.AC_Up); warning('个体数据和聚合数据的时间步长不匹配。'); end
-    catch ME; error('从 %s 读取维度信息时出错: %s', individual_file, ME.message); end
-
-    AC_Up_raw = results_agg.AC_Up(:)'; AC_Down_raw = abs(results_agg.AC_Down(:)');
-    EV_Up_raw = results_agg.EV_Up(:)'; EV_Down_raw = abs(results_agg.EV_Down(:)');
-    fprintf('数据维度加载完成。\nT=%d, N_AC=%d, N_EV=%d\n', T, num_ac_total, num_ev_total);
-
-    % --- 2. 定义仿真参数 (同 run_hourly_GA_plus_Greedy.m) ---
-    if isfield(results_agg,'dt') && ~isempty(results_agg.dt)
-        dt = results_agg.dt;
-    else
-        dt = 5/60; % 默认 5 分钟
-        warning('聚合结果文件中未找到 dt, 使用默认值 %.3f 小时。', dt);
+    % --- 1. 加载数据 (*** 已按您的要求修改 ***) ---
+    chunk_file_to_load = 'chunk_results/results_chunk_1.mat'; % <--- 加载指定的分块文件
+    
+    fprintf('正在加载分块数据: %s\n', chunk_file_to_load);
+    try
+        data_struct = load(chunk_file_to_load);
+        if isfield(data_struct, 'results')
+            sim_results = data_struct.results;
+        else
+            error('在 %s 文件中未找到 "results" 结构体。', chunk_file_to_load);
+        end
+    catch ME
+        error('加载数据文件 %s 失败。请确保文件路径正确。\n错误信息: %s', chunk_file_to_load, ME.message);
     end
+
+    % --- 从 results 结构体中提取数据 (假设是上调场景) ---
+    if isfield(sim_results, 'AC_Up_Individual')
+        P_ac_potential_full = sim_results.AC_Up_Individual;
+    else
+        P_ac_potential_full = zeros(0, 481); % 假设 T=481
+    end
+    
+    if isfield(sim_results, 'EV_Up_Individual')
+        P_ev_potential_full = sim_results.EV_Up_Individual;
+    else
+        P_ev_potential_full = zeros(0, 481);
+    end
+    
+    % (假设下调也需要)
+    if isfield(sim_results, 'AC_Down_Individual')
+        P_ac_potential_down_full = abs(sim_results.AC_Down_Individual);
+    else
+        P_ac_potential_down_full = zeros(0, 481);
+    end
+    
+    if isfield(sim_results, 'EV_Down_Individual')
+        P_ev_potential_down_full = abs(sim_results.EV_Down_Individual);
+    else
+        P_ev_potential_down_full = zeros(0, 481);
+    end
+
+    [num_ac_total, T] = size(P_ac_potential_full);
+    [num_ev_total, ~] = size(P_ev_potential_full);
+
+    % --- 将数据加载到硬盘 matfile 以模拟原始脚本的内存优化 ---
+    individual_file = 'temp_individual_data_for_opt.mat';
+    if exist(individual_file, 'file'), delete(individual_file); end
+    m_individual = matfile(individual_file, 'Writable', true);
+    m_individual.AC_Up_Individual = P_ac_potential_full;
+    m_individual.EV_Up_Individual = P_ev_potential_full;
+    m_individual.AC_Down_Individual = -P_ac_potential_down_full; % 存为负值
+    m_individual.EV_Down_Individual = -P_ev_potential_down_full;
+    clear P_ac_potential_full P_ev_potential_full P_ac_potential_down_full P_ev_potential_down_full data_struct sim_results;
+
+    % 计算原始聚合数据
+    AC_Up_raw = sum(m_individual.AC_Up_Individual, 1);
+    EV_Up_raw = sum(m_individual.EV_Up_Individual, 1);
+    AC_Down_raw = sum(abs(m_individual.AC_Down_Individual), 1);
+    EV_Down_raw = sum(abs(m_individual.EV_Down_Individual), 1);
+    
+    fprintf('数据维度加载完成。\nT=%d, N_AC=%d, N_EV=%d\n', T, num_ac_total, num_ev_total);
+    
+    
+    % --- 2. 定义仿真参数 ---
+    dt = 5/60; % 假设 5 分钟
     steps_per_hour = round(1/dt);
     num_hours = floor(T / steps_per_hour);
     fprintf('仿真参数: dt=%.3f小时, 每小时步数=%d, 总小时数=%d\n', dt, steps_per_hour, num_hours);
 
-    P_grid_up_demand = generate_demand(results_agg, 'P_grid_up_regulation_demand', T, (sum(AC_Up_raw) + sum(EV_Up_raw)) / T, [0.2, 0.5], 100);
-    P_grid_down_demand = generate_demand(results_agg, 'P_grid_down_regulation_demand', T, (sum(AC_Down_raw) + sum(EV_Down_raw)) / T, [0.15, 0.4], 80);
+    P_grid_up_demand = (sum(AC_Up_raw) + sum(EV_Up_raw)) / T * (0.2 + 0.3*rand(T,1));
+    P_grid_down_demand = (sum(AC_Down_raw) + sum(EV_Down_raw)) / T * (0.15 + 0.25*rand(T,1));
     c_ac_up = ones(num_ac_total, 1) * 0.05; c_ev_up = ones(num_ev_total, 1) * 0.04;
     c_ac_down = ones(num_ac_total, 1) * 0.03; c_ev_down = ones(num_ev_total, 1) * 0.02;
     eps_val = 1e-6;
 
-    % --- *** 2.5 新增：定义网络拓扑参数 (示例数据) *** ---
-    % !!! 在实际应用中，您需要加载真实的电网数据 !!!
+    % --- 2.5 新增：定义网络拓扑参数 (示例数据) ---
     fprintf('正在定义网络拓扑参数 (示例)...\n');
     N_bus = 10;  % 假设有10个节点
     N_line = 8; % 假设有8条线路
     
-    % [cite: 38] (Location_AC, Location_EV)
     Location_AC = randi([1, N_bus], num_ac_total, 1);
     Location_EV = randi([1, N_bus], num_ev_total, 1);
-    
-    % [cite: 42] (PTDF_matrix)
     PTDF_matrix = rand(N_line, N_bus) * 0.2 - 0.1; % 示例 PTDF 矩阵 (N_line x N_bus)
-    
-    % [cite: 38] (P_Line_Base)
     P_Line_Base = rand(N_line, T) * 50 - 25; % 示例 线路基础潮流 (N_line x T)
-    
-    % [cite: 38] (P_Line_Max)
     P_Line_Max = rand(N_line, 1) * 50 + 50; % 示例 线路容量 (N_line x 1), 50-100 kW
-    % --- 结束新增 ---
 
     %% 3. 分层优化主循环
-    % 初始化最终结果存储
     U_ac_up_final = zeros(num_ac_total, T); U_ev_up_final = zeros(num_ev_total, T);
     U_ac_down_final = zeros(num_ac_total, T); U_ev_down_final = zeros(num_ev_total, T);
     cost_up_final = zeros(1, T); cost_down_final = zeros(1, T);
@@ -78,6 +104,9 @@ function run_hourly_GA_PTDF()
     fprintf('\n开始分层优化 (共 %d 小时)...\n', num_hours);
     tic_loop = tic;
     pool = gcp('nocreate');
+    if isempty(pool)
+        parpool(); % 启动并行池
+    end
   
     % --- 主循环改为串行 ---
     for h = 1:num_hours
@@ -101,17 +130,21 @@ function run_hourly_GA_PTDF()
 
         % --- 3.2 上层GA (保持不变) ---
         fprintf('  上层GA: 优化设备参与数量 (满足峰值需求 + 优化小时级指标)...\n');
-        ga_opts_up = optimoptions('ga', 'Display', 'off', 'UseParallel', true);
-        [n_ac_up_hourly, n_ev_up_hourly] = optimize_hourly_participation_GA_constrained( ...
+        
+        % ***【修正 1/2】***
+        % 传递一个包含名称-值对的 *单元格数组*
+        ga_opts_up = {'Display', 'off', 'UseParallel', true};
+        [n_ac_up_hourly, n_ev_up_hourly] = optimize_hourly_participation_GA_constrained_ptdf( ...
             num_ac_total, num_ev_total, P_ac_up_hourly, P_ev_up_hourly, P_req_up_hourly, current_steps_in_hour, ga_opts_up);
         fprintf('  GA结果(上调): n_ac=%d, n_ev=%d\n', n_ac_up_hourly, n_ev_up_hourly);
-
-        ga_opts_down = optimoptions('ga', 'Display', 'off', 'UseParallel', true);
-        [n_ac_down_hourly, n_ev_down_hourly] = optimize_hourly_participation_GA_constrained( ...
+        
+        % ***【修正 2/2】***
+        ga_opts_down = {'Display', 'off', 'UseParallel', true};
+        [n_ac_down_hourly, n_ev_down_hourly] = optimize_hourly_participation_GA_constrained_ptdf( ...
             num_ac_total, num_ev_total, P_ac_down_hourly, P_ev_down_hourly, P_req_down_hourly, current_steps_in_hour, ga_opts_down);
         fprintf('  GA结果(下调): n_ac=%d, n_ev=%d\n', n_ac_down_hourly, n_ev_down_hourly);
 
-        % --- 3.3 *** 修改：下层MILP调度 *** ---
+        % --- 3.3 下层MILP调度 ---
         fprintf('  下层MILP: 在 %d 个时间步内执行约束调度 (含PTDF)...\n', current_steps_in_hour);
         
         U_ac_up_h = zeros(num_ac_total, current_steps_in_hour);
@@ -134,14 +167,13 @@ function run_hourly_GA_PTDF()
             p_ac_t_up = P_ac_up_hourly(:, t_local);
             p_ev_t_up = P_ev_up_hourly(:, t_local);
             
-            % 调用新的 MILP 求解器
             [u_ac_up, u_ev_up, cost_up, flag_up] = solve_hourly_dispatch_ptdf( ...
                 num_ac_total, num_ev_total, ...
                 p_ac_t_up, p_ev_t_up, ...
                 c_ac_up, c_ev_up, P_req_up_hourly(t_local), ...
-                n_ac_up_hourly, n_ev_up_hourly, ... % GA 数量约束
-                Location_AC, Location_EV, PTDF_matrix, ... % 网络参数
-                P_Line_Base(:, t_global), P_Line_Max, N_bus, N_line); % 网络参数
+                n_ac_up_hourly, n_ev_up_hourly, ... 
+                Location_AC, Location_EV, PTDF_matrix, ... 
+                P_Line_Base(:, t_global), P_Line_Max, N_bus, N_line); 
             
             if flag_up > 0
                 U_ac_up_h(:, t_local) = u_ac_up;
@@ -150,7 +182,7 @@ function run_hourly_GA_PTDF()
                 p_ac_up_h(t_local) = sum(u_ac_up .* p_ac_t_up);
                 p_ev_up_h(t_local) = sum(u_ev_up .* p_ev_t_up);
             else
-                cost_up_h(t_local) = NaN; % 标记求解失败
+                cost_up_h(t_local) = NaN;
             end
 
             % --- 下调调度 ---
@@ -161,9 +193,9 @@ function run_hourly_GA_PTDF()
                 num_ac_total, num_ev_total, ...
                 p_ac_t_down, p_ev_t_down, ...
                 c_ac_down, c_ev_down, P_req_down_hourly(t_local), ...
-                n_ac_down_hourly, n_ev_down_hourly, ... % GA 数量约束
-                Location_AC, Location_EV, PTDF_matrix, ... % 网络参数
-                P_Line_Base(:, t_global), P_Line_Max, N_bus, N_line); % 网络参数
+                n_ac_down_hourly, n_ev_down_hourly, ... 
+                Location_AC, Location_EV, PTDF_matrix, ... 
+                P_Line_Base(:, t_global), P_Line_Max, N_bus, N_line); 
 
             if flag_down > 0
                 U_ac_down_h(:, t_local) = u_ac_down;
@@ -197,8 +229,10 @@ function run_hourly_GA_PTDF()
     toc(tic_loop);
     fprintf('分层优化(含PTDF)完成。\n');
 
+    % 清理临时 mat 文件
+    delete(individual_file);
 
-    %% 4. 计算优化前后的SDCI和Rho指标 (同 run_hourly_GA_plus_Greedy.m)
+    %% 4. 计算优化前后的SDCI和Rho指标
     fprintf('计算指标 (基于全量数据)...\n');
     n_ac_raw_t = ones(T,1) * num_ac_total; n_ev_raw_t = ones(T,1) * num_ev_total;
     if num_ac_total == 0; n_ac_raw_t = zeros(T,1); end; if num_ev_total == 0; n_ev_raw_t = zeros(T,1); end
@@ -230,7 +264,7 @@ function run_hourly_GA_PTDF()
     SDCI_down_opt = ensureScalar(calculateSDCI(n_ac_opt_down_count_t, n_ev_opt_down_count_t, avg_P_ac_opt_down, avg_P_ev_opt_down));
     rho_down_opt  = ensureScalar(calculateSpearmanRho(n_ac_opt_down_count_t, avg_P_ac_opt_down, n_ev_opt_down_count_t, avg_P_ev_opt_down));
 
-    %% 5. 结果分析与可视化 (同 run_hourly_GA_plus_Greedy.m)
+    %% 5. 结果分析与可视化
     fprintf('生成可视化图表...\n');
     time_axis = (1:T)';
     Total_Up_Optimal_Agg = P_ac_dispatched_opt_up_t' + P_ev_dispatched_opt_up_t';
@@ -257,27 +291,14 @@ end % 结束主函数
 %                       局部辅助函数
 % ------------------------------------------------------------------------
 
-
-
-%% 局部函数: generate_demand (同 run_hourly_GA_plus_Greedy.m)
-function P_demand = generate_demand(results_agg, field_name, T, avg_raw_power, factors, default_avg)
-    if isfield(results_agg, field_name) && ~isempty(results_agg.(field_name)) && length(results_agg.(field_name)) == T
-        P_demand = results_agg.(field_name)(:);
-    else
-        if isnan(avg_raw_power) || avg_raw_power <= 0; avg_raw_power = default_avg; end
-        P_demand = avg_raw_power * (factors(1) + (factors(2)-factors(1)) * rand(T,1));
-        fprintf('未在聚合文件中找到 "%s"，已生成示例需求。\n', field_name);
-    end
-end
-
-%% 局部函数: ensureScalar (同 run_hourly_GA_plus_Greedy.m)
+%% 局部函数: ensureScalar
 function val = ensureScalar(inputVal)
     if isscalar(inputVal); val = inputVal;
     elseif isempty(inputVal); val = NaN;
     else; val = mean(inputVal(:), 'omitnan'); end
 end
 
-%% 局部函数: add_bar_labels (同 run_hourly_GA_plus_Greedy.m)
+%% 局部函数: add_bar_labels
 function add_bar_labels(bar_handles, bar_data)
     for k_bar = 1:size(bar_data, 1)
         for j_bar = 1:size(bar_data, 2)
