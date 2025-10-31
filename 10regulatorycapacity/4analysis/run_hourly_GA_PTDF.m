@@ -1,16 +1,10 @@
-% run_hourly_GA_PTDF.m (已修正)
+% run_hourly_GA_PTDF.m (已按 Task 1 和 Task 2 修改)
 function run_hourly_GA_PTDF()
-    %% 内存优化的分层调度脚本 (版本 8: 小时级GA + 分钟级MILP(含PTDF)调度)
-    % 架构:
-    % 1. 上层(GA): 优化每小时参与数(n_ac, n_ev)，满足小时峰值需求+优化小时SDCI/Rho。
-    % 2. 下层(MILP): 在GA给定的(n_ac, n_ev)数量内，
-    %    在每个时间步t，求解成本最低的(u_i, u_j)组合，
-    %    同时满足 P_req(t) 约束 和 线路潮流(PTDF)约束。
+    %% 内存优化的分层调度脚本 (版本 9: 均匀分配 + 智能上层GA)
     clc; close all; clear;
 
-    % --- 1. 加载数据 (*** 已按您的要求修改 ***) ---
-    chunk_file_to_load = 'chunk_results/results_chunk_1.mat'; % <--- 加载指定的分块文件
-    
+    % --- 1. 加载数据 ---
+    chunk_file_to_load = 'chunk_results/results_chunk_1.mat'; 
     fprintf('正在加载分块数据: %s\n', chunk_file_to_load);
     try
         data_struct = load(chunk_file_to_load);
@@ -20,29 +14,25 @@ function run_hourly_GA_PTDF()
             error('在 %s 文件中未找到 "results" 结构体。', chunk_file_to_load);
         end
     catch ME
-        error('加载数据文件 %s 失败。请确保文件路径正确。\n错误信息: %s', chunk_file_to_load, ME.message);
+        error('加载数据文件 %s 失败: %s', chunk_file_to_load, ME.message);
     end
 
-    % --- 从 results 结构体中提取数据 (假设是上调场景) ---
+    % --- 从 results 结构体中提取数据 ---
     if isfield(sim_results, 'AC_Up_Individual')
         P_ac_potential_full = sim_results.AC_Up_Individual;
     else
-        P_ac_potential_full = zeros(0, 481); % 假设 T=481
+        P_ac_potential_full = zeros(0, 481); 
     end
-    
     if isfield(sim_results, 'EV_Up_Individual')
         P_ev_potential_full = sim_results.EV_Up_Individual;
     else
         P_ev_potential_full = zeros(0, 481);
     end
-    
-    % (假设下调也需要)
     if isfield(sim_results, 'AC_Down_Individual')
         P_ac_potential_down_full = abs(sim_results.AC_Down_Individual);
     else
         P_ac_potential_down_full = zeros(0, 481);
     end
-    
     if isfield(sim_results, 'EV_Down_Individual')
         P_ev_potential_down_full = abs(sim_results.EV_Down_Individual);
     else
@@ -58,11 +48,10 @@ function run_hourly_GA_PTDF()
     m_individual = matfile(individual_file, 'Writable', true);
     m_individual.AC_Up_Individual = P_ac_potential_full;
     m_individual.EV_Up_Individual = P_ev_potential_full;
-    m_individual.AC_Down_Individual = -P_ac_potential_down_full; % 存为负值
+    m_individual.AC_Down_Individual = -P_ac_potential_down_full; 
     m_individual.EV_Down_Individual = -P_ev_potential_down_full;
     clear P_ac_potential_full P_ev_potential_full P_ac_potential_down_full P_ev_potential_down_full data_struct sim_results;
 
-    % 计算原始聚合数据
     AC_Up_raw = sum(m_individual.AC_Up_Individual, 1);
     EV_Up_raw = sum(m_individual.EV_Up_Individual, 1);
     AC_Down_raw = sum(abs(m_individual.AC_Down_Individual), 1);
@@ -83,16 +72,28 @@ function run_hourly_GA_PTDF()
     c_ac_down = ones(num_ac_total, 1) * 0.03; c_ev_down = ones(num_ev_total, 1) * 0.02;
     eps_val = 1e-6;
 
-    % --- 2.5 新增：定义网络拓扑参数 (示例数据) ---
+    % --- 2.5 定义网络拓扑参数 (示例数据) ---
     fprintf('正在定义网络拓扑参数 (示例)...\n');
     N_bus = 10;  % 假设有10个节点
     N_line = 8; % 假设有8条线路
     
-    Location_AC = randi([1, N_bus], num_ac_total, 1);
-    Location_EV = randi([1, N_bus], num_ev_total, 1);
-    PTDF_matrix = rand(N_line, N_bus) * 0.2 - 0.1; % 示例 PTDF 矩阵 (N_line x N_bus)
-    P_Line_Base = rand(N_line, T) * 50 - 25; % 示例 线路基础潮流 (N_line x T)
-    P_Line_Max = rand(N_line, 1) * 50 + 50; % 示例 线路容量 (N_line x 1), 50-100 kW
+    % *** 【Task 1 修正】: 均匀分配设备到节点 ***
+    fprintf('正在将 %d 台AC和 %d 台EV均匀分配到 %d 个节点...\n', num_ac_total, num_ev_total, N_bus);
+    if num_ac_total > 0
+        Location_AC = mod( (1:num_ac_total)' - 1, N_bus) + 1;
+    else
+        Location_AC = [];
+    end
+    if num_ev_total > 0
+        Location_EV = mod( (1:num_ev_total)' - 1, N_bus) + 1;
+    else
+        Location_EV = [];
+    end
+    % *******************************************
+
+    PTDF_matrix = rand(N_line, N_bus) * 0.2 - 0.1; 
+    P_Line_Base = rand(N_line, T) * 50 - 25; 
+    P_Line_Max = rand(N_line, 1) * 50 + 50; 
 
     %% 3. 分层优化主循环
     U_ac_up_final = zeros(num_ac_total, T); U_ev_up_final = zeros(num_ev_total, T);
@@ -105,10 +106,9 @@ function run_hourly_GA_PTDF()
     tic_loop = tic;
     pool = gcp('nocreate');
     if isempty(pool)
-        parpool(); % 启动并行池
+        parpool(); 
     end
   
-    % --- 主循环改为串行 ---
     for h = 1:num_hours
         fprintf('--- 正在优化第 %d 小时 ---\n', h);
 
@@ -126,23 +126,27 @@ function run_hourly_GA_PTDF()
         P_ev_down_hourly = double(abs(m_individual.EV_Down_Individual(:, current_steps_indices)));
         P_req_up_hourly = P_grid_up_demand(current_steps_indices);
         P_req_down_hourly = P_grid_down_demand(current_steps_indices);
+        % *** 【Task 2 修正】: 传递当前小时的线路基础潮流 ***
+        P_Line_Base_hourly = P_Line_Base(:, current_steps_indices);
+        
         fprintf('  数据加载完毕.\n');
 
-        % --- 3.2 上层GA (保持不变) ---
-        fprintf('  上层GA: 优化设备参与数量 (满足峰值需求 + 优化小时级指标)...\n');
+        % --- 3.2 上层GA ---
+        fprintf('  上层GA: 优化设备参与数量 (包含网络估算)...\n');
         
-        % ***【修正 1/2】***
-        % 传递一个包含名称-值对的 *单元格数组*
-        ga_opts_up = {'Display', 'off', 'UseParallel', true};
+        ga_opts_cell = {'Display', 'off', 'UseParallel', true};
+        
+        % *** 【Task 2 修正】: 传递所有网络参数给上层GA ***
         [n_ac_up_hourly, n_ev_up_hourly] = optimize_hourly_participation_GA_constrained_ptdf( ...
-            num_ac_total, num_ev_total, P_ac_up_hourly, P_ev_up_hourly, P_req_up_hourly, current_steps_in_hour, ga_opts_up);
+            num_ac_total, num_ev_total, P_ac_up_hourly, P_ev_up_hourly, P_req_up_hourly, current_steps_in_hour, ga_opts_cell, ...
+            Location_AC, Location_EV, PTDF_matrix, P_Line_Base_hourly, P_Line_Max, N_bus, N_line);
         fprintf('  GA结果(上调): n_ac=%d, n_ev=%d\n', n_ac_up_hourly, n_ev_up_hourly);
         
-        % ***【修正 2/2】***
-        ga_opts_down = {'Display', 'off', 'UseParallel', true};
         [n_ac_down_hourly, n_ev_down_hourly] = optimize_hourly_participation_GA_constrained_ptdf( ...
-            num_ac_total, num_ev_total, P_ac_down_hourly, P_ev_down_hourly, P_req_down_hourly, current_steps_in_hour, ga_opts_down);
+            num_ac_total, num_ev_total, P_ac_down_hourly, P_ev_down_hourly, P_req_down_hourly, current_steps_in_hour, ga_opts_cell, ...
+            Location_AC, Location_EV, PTDF_matrix, P_Line_Base_hourly, P_Line_Max, N_bus, N_line);
         fprintf('  GA结果(下调): n_ac=%d, n_ev=%d\n', n_ac_down_hourly, n_ev_down_hourly);
+        % ************************************************
 
         % --- 3.3 下层MILP调度 ---
         fprintf('  下层MILP: 在 %d 个时间步内执行约束调度 (含PTDF)...\n', current_steps_in_hour);
@@ -159,9 +163,8 @@ function run_hourly_GA_PTDF()
         p_ac_down_h = zeros(1, current_steps_in_hour);
         p_ev_down_h = zeros(1, current_steps_in_hour);
 
-        % --- 使用 parfor 并行处理时间步 ---
         parfor t_local = 1:current_steps_in_hour
-            t_global = current_steps_indices(t_local); % 全局时间索引
+            t_global = current_steps_indices(t_local); 
 
             % --- 上调调度 ---
             p_ac_t_up = P_ac_up_hourly(:, t_local);
@@ -173,7 +176,7 @@ function run_hourly_GA_PTDF()
                 c_ac_up, c_ev_up, P_req_up_hourly(t_local), ...
                 n_ac_up_hourly, n_ev_up_hourly, ... 
                 Location_AC, Location_EV, PTDF_matrix, ... 
-                P_Line_Base(:, t_global), P_Line_Max, N_bus, N_line); 
+                P_Line_Base(:, t_global), P_Line_Max, N_bus, N_line, t_global); % 传递 t_global 用于警告
             
             if flag_up > 0
                 U_ac_up_h(:, t_local) = u_ac_up;
@@ -195,7 +198,7 @@ function run_hourly_GA_PTDF()
                 c_ac_down, c_ev_down, P_req_down_hourly(t_local), ...
                 n_ac_down_hourly, n_ev_down_hourly, ... 
                 Location_AC, Location_EV, PTDF_matrix, ... 
-                P_Line_Base(:, t_global), P_Line_Max, N_bus, N_line); 
+                P_Line_Base(:, t_global), P_Line_Max, N_bus, N_line, t_global); % 传递 t_global 用于警告
 
             if flag_down > 0
                 U_ac_down_h(:, t_local) = u_ac_down;
@@ -229,10 +232,9 @@ function run_hourly_GA_PTDF()
     toc(tic_loop);
     fprintf('分层优化(含PTDF)完成。\n');
 
-    % 清理临时 mat 文件
     delete(individual_file);
 
-    %% 4. 计算优化前后的SDCI和Rho指标
+    %% 4. 计算优化前后的SDCI和Rho指标 (不变)
     fprintf('计算指标 (基于全量数据)...\n');
     n_ac_raw_t = ones(T,1) * num_ac_total; n_ev_raw_t = ones(T,1) * num_ev_total;
     if num_ac_total == 0; n_ac_raw_t = zeros(T,1); end; if num_ev_total == 0; n_ev_raw_t = zeros(T,1); end
@@ -252,7 +254,6 @@ function run_hourly_GA_PTDF()
     SDCI_down_raw = ensureScalar(calculateSDCI(n_ac_raw_t, n_ev_raw_t, avg_P_ac_raw_down_t, avg_P_ev_raw_down_t));
     rho_down_raw  = ensureScalar(calculateSpearmanRho(n_ac_raw_t, avg_P_ac_raw_down_t, n_ev_raw_t, avg_P_ev_raw_down_t));
 
-    % --- "优化后"场景的SDCI和Rho计算 ---
     n_ac_opt_up_count_t = sum(U_ac_up_final, 1)'; n_ev_opt_up_count_t = sum(U_ev_up_final, 1)';
     n_ac_opt_down_count_t = sum(U_ac_down_final, 1)'; n_ev_opt_down_count_t = sum(U_ev_down_final, 1)';
     avg_P_ac_opt_up = P_ac_dispatched_opt_up_t' ./ (n_ac_opt_up_count_t + eps_val);
@@ -264,7 +265,7 @@ function run_hourly_GA_PTDF()
     SDCI_down_opt = ensureScalar(calculateSDCI(n_ac_opt_down_count_t, n_ev_opt_down_count_t, avg_P_ac_opt_down, avg_P_ev_opt_down));
     rho_down_opt  = ensureScalar(calculateSpearmanRho(n_ac_opt_down_count_t, avg_P_ac_opt_down, n_ev_opt_down_count_t, avg_P_ev_opt_down));
 
-    %% 5. 结果分析与可视化
+    %% 5. 结果分析与可视化 (不变)
     fprintf('生成可视化图表...\n');
     time_axis = (1:T)';
     Total_Up_Optimal_Agg = P_ac_dispatched_opt_up_t' + P_ev_dispatched_opt_up_t';
@@ -277,7 +278,7 @@ function run_hourly_GA_PTDF()
     subplot(2,2,3); indicator_names_up = {'SDCI⁺', 'Spearman ρ⁺'}; values_raw_up = [SDCI_up_raw; rho_up_raw]; values_opt_up = [SDCI_up_opt; rho_up_opt]; bar_data_up = [values_raw_up, values_opt_up]; b_up = bar(bar_data_up); set(gca, 'XTickLabel', indicator_names_up); ylabel('Indicator Value'); ylim([-1.1, 1.1]); legend([b_up(1) b_up(2)], {'Raw Aggregated', 'Optimized (Layered+PTDF)'}, 'Location', 'northoutside', 'Orientation','horizontal'); title('Up-Regulation Complementarity & Correlation'); grid on; add_bar_labels(b_up, bar_data_up);
     subplot(2,2,4); indicator_names_down = {'SDCI⁻', 'Spearman ρ⁻'}; values_raw_down = [SDCI_down_raw; rho_down_raw]; values_opt_down = [SDCI_down_opt; rho_down_opt]; bar_data_down = [values_raw_down, values_opt_down]; b_down = bar(bar_data_down); set(gca, 'XTickLabel', indicator_names_down); ylabel('Indicator Value'); ylim([-1.1, 1.1]); legend([b_down(1) b_down(2)],{'Raw Aggregated', 'Optimized (Layered+PTDF)'}, 'Location', 'northoutside', 'Orientation','horizontal'); title('Down-Regulation Complementarity & Correlation'); grid on; add_bar_labels(b_down, bar_data_down);
 
-    %% 6. 命令行输出汇总
+    %% 6. 命令行输出汇总 (不变)
     disp(' ');
     disp('=== 互补性与相关性指标对比 (分层GA + MILP(含PTDF) 优化) ===');
     disp('【上调】'); fprintf('优化前 (Raw Aggregated): SDCI⁺ = %.4f, ρ⁺ = %.4f\n', SDCI_up_raw, rho_up_raw); fprintf('优化后 (Layered Opt): SDCI⁺ = %.4f, ρ⁺ = %.4f, 总成本 = %.2f\n', SDCI_up_opt, rho_up_opt, nansum(cost_up_final));

@@ -1,15 +1,18 @@
-% optimize_hourly_participation_GA_constrained.m
-%% 局部函数: 上层GA，优化每小时的参与设备数 (带功率约束)
-function [n_ac_opt, n_ev_opt] = optimize_hourly_participation_GA_constrained_ptdf(num_ac_total, num_ev_total, P_ac_hourly, P_ev_hourly, P_req_hourly, steps_per_hour, ga_options)
-    % ga_options 期望是一个 cell 数组, e.g., {'Display', 'off'}
+% optimize_hourly_participation_GA_constrained.m (已按 Task 2 修改)
+function [n_ac_opt, n_ev_opt] = optimize_hourly_participation_GA_constrained_ptdf( ...
+    num_ac_total, num_ev_total, P_ac_hourly, P_ev_hourly, P_req_hourly, steps_per_hour, ga_options, ...
+    Location_AC, Location_EV, PTDF_matrix, P_Line_Base_hourly, P_Line_Max, N_bus, N_line)
+    % *** 【Task 2 修正】: 增加了新的输入参数 (Location_AC, ..., N_line) ***
 
     nvars = 2; % [n_ac, n_ev]
     lb = [0, 0];
     ub = [num_ac_total, num_ev_total];
     intcon = 1:2;
 
-    % 目标函数句柄 (包含功率约束检查)
-    fitness_fcn = @(x) hourly_ga_fitness_constrained(x, P_ac_hourly, P_ev_hourly, P_req_hourly, steps_per_hour);
+    % *** 【Task 2 修正】: 传递网络参数给适应度函数 ***
+    fitness_fcn = @(x) hourly_ga_fitness_constrained(x, ...
+        P_ac_hourly, P_ev_hourly, P_req_hourly, steps_per_hour, ...
+        Location_AC, Location_EV, PTDF_matrix, P_Line_Base_hourly, P_Line_Max, N_bus, N_line);
 
     % --- 设置 GA 选项 ---
     ga_opts_default = optimoptions('ga', ...
@@ -17,14 +20,11 @@ function [n_ac_opt, n_ev_opt] = optimize_hourly_participation_GA_constrained_ptd
         'MaxGenerations', 80, ...
         'Display', 'off', ...
         'EliteCount', 3, ...
-        'UseParallel', true, ... % 允许 GA 内部并行
+        'UseParallel', true, ... 
         'ConstraintTolerance', 1e-3, ...
         'FunctionTolerance', 1e-4);
 
-    % 合并传入的选项和默认选项
-    if nargin > 6 && ~isempty(ga_options)
-        % *** [FIX 3] ***
-        % 使用 {:} 语法解包 cell 数组作为 Name-Value 对
+    if nargin > 6 && ~isempty(ga_options) && iscell(ga_options)
         ga_opts_final = optimoptions(ga_opts_default, ga_options{:}); 
     else
         ga_opts_final = ga_opts_default;
