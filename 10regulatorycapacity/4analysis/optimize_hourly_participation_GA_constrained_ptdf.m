@@ -38,7 +38,7 @@ function [n_ac_opt, n_ev_opt] = optimize_hourly_participation_GA_constrained_ptd
              x_opt = ub;
         end
     catch ME_ga
-        warning('小时级 GA 运行失败: %s。使用最大可用数量作为备选。', ME_ga.message);
+        warning('小时级 GA 运行失败: %s。使用最大可用数量作为备选。');
         x_opt = ub;
     end
 

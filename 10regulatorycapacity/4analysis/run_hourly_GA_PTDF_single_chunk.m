@@ -7,6 +7,7 @@ function run_hourly_GA_PTDF_single_chunk()
     % 3. 下层(MILP): 在GA给定的(n_ac, n_ev)数量内，
     %    在每个时间步t，求解该分块中成本最低的(u_i, u_j)组合，
     %    同时满足 P_req(t) 约束 和 线路潮流(PTDF)约束。
+    % *** (新增) 4. MILP求解失败时，回退到 贪心算法 (Greedy) 确保功率满足 ***
     clc; close all; clear;
 
     % --- 1. [MODIFIED] 加载并准备 *单个* 分块数据 ---
@@ -210,7 +211,7 @@ function run_hourly_GA_PTDF_single_chunk()
 
         % *** [FIX 3] ***
         ga_opts_down = {'Display', 'off', 'UseParallel', true};
-        [n_ac_down_hourly, n_ev_down_hourly] = optimize_hourly_participation_GA_constrained( ...
+        [n_ac_down_hourly, n_ev_down_hourly] = optimize_hourly_participation_GA_constrained_ptdf( ... % 使用 ptdf 版本的函数名
             num_ac_total, num_ev_total, P_ac_down_hourly, P_ev_down_hourly, P_req_down_hourly, current_steps_in_hour, ga_opts_down);
         fprintf('  GA结果(下调): n_ac=%d, n_ev=%d\n', n_ac_down_hourly, n_ev_down_hourly);
 
@@ -244,15 +245,29 @@ function run_hourly_GA_PTDF_single_chunk()
                 Location_AC, Location_EV, PTDF_matrix, ... 
                 P_Line_Base(:, t_global), P_Line_Max, N_bus, N_line); 
             
-            if flag_up > 0
+            %% --- MODIFICATION START (UP) ---
+            if flag_up > 0 % MILP(PTDF) 成功
                 U_ac_up_h(:, t_local) = u_ac_up;
                 U_ev_up_h(:, t_local) = u_ev_up;
                 cost_up_h(t_local) = cost_up;
                 p_ac_up_h(t_local) = sum(u_ac_up .* p_ac_t_up);
                 p_ev_up_h(t_local) = sum(u_ev_up .* p_ev_t_up);
-            else
-                cost_up_h(t_local) = NaN; 
+            else % MILP(PTDF) 失败，回退到贪心算法 (不考虑PTDF)
+                 % 在 parfor 中使用 fprintf 可能导致输出交错，但对于调试是可接受的
+                 fprintf('  警告: 时段 %d (全局) MILP(PTDF) 上调求解失败 (Flag=%d)。回退到贪心算法。\n', t_global, flag_up);
+                 
+                 % 调用贪心算法 (需要 solve_hourly_dispatch_greedy_with_count.m 在路径中)
+                 [u_ac_greedy, u_ev_greedy, cost_greedy] = solve_hourly_dispatch_greedy_with_count( ...
+                    p_ac_t_up, p_ev_t_up, c_ac_up, c_ev_up, P_req_up_hourly(t_local), n_ac_up_hourly, n_ev_up_hourly);
+            
+                U_ac_up_h(:, t_local) = u_ac_greedy;
+                U_ev_up_h(:, t_local) = u_ev_greedy;
+                cost_up_h(t_local) = cost_greedy; % 使用贪心算法的成本
+                p_ac_up_h(t_local) = sum(u_ac_greedy .* p_ac_t_up);
+                p_ev_up_h(t_local) = sum(u_ev_greedy .* p_ev_t_up);
             end
+            %% --- MODIFICATION END (UP) ---
+
 
             % --- 下调调度 ---
             p_ac_t_down = P_ac_down_hourly(:, t_local);
@@ -266,15 +281,27 @@ function run_hourly_GA_PTDF_single_chunk()
                 Location_AC, Location_EV, PTDF_matrix, ... 
                 P_Line_Base(:, t_global), P_Line_Max, N_bus, N_line); 
 
-            if flag_down > 0
+            %% --- MODIFICATION START (DOWN) ---
+            if flag_down > 0 % MILP(PTDF) 成功
                 U_ac_down_h(:, t_local) = u_ac_down;
                 U_ev_down_h(:, t_local) = u_ev_down;
                 cost_down_h(t_local) = cost_down;
                 p_ac_down_h(t_local) = sum(u_ac_down .* p_ac_t_down);
                 p_ev_down_h(t_local) = sum(u_ev_down .* p_ev_t_down);
-            else
-                cost_down_h(t_local) = NaN;
+            else % MILP(PTDF) 失败，回退到贪心算法 (不考虑PTDF)
+                fprintf('  警告: 时段 %d (全局) MILP(PTDF) 下调求解失败 (Flag=%d)。回退到贪心算法。\n', t_global, flag_down);
+                
+                [u_ac_greedy_d, u_ev_greedy_d, cost_greedy_d] = solve_hourly_dispatch_greedy_with_count( ...
+                    p_ac_t_down, p_ev_t_down, c_ac_down, c_ev_down, P_req_down_hourly(t_local), n_ac_down_hourly, n_ev_down_hourly);
+                    
+                U_ac_down_h(:, t_local) = u_ac_greedy_d;
+                U_ev_down_h(:, t_local) = u_ev_greedy_d;
+                cost_down_h(t_local) = cost_greedy_d;
+                p_ac_down_h(t_local) = sum(u_ac_greedy_d .* p_ac_t_down);
+                p_ev_down_h(t_local) = sum(u_ev_greedy_d .* p_ev_t_down);
             end
+            %% --- MODIFICATION END (DOWN) ---
+            
         end % 结束 parfor t_local
 
         U_ac_up_final(:, current_steps_indices) = U_ac_up_h;
