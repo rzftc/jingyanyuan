@@ -28,7 +28,14 @@ function fitness = hourly_ga_fitness_constrained(x, P_ac_hourly, P_ev_hourly, P_
         min_potential_power_hourly = min(min_potential_power_hourly, current_potential_power);
     end
 
-    power_shortage = max(0, max_demand_hourly - min_potential_power_hourly);
+    %% --- MODIFICATION START ---
+    % 为上层GA增加 "冗余因子" (安全系数)
+    % 迫使GA选择比严格需求更多的设备，为下层MILP提供灵活性以规避PTDF约束
+    safety_factor = 1.2; % 增加20%的功率冗余 (您可以调整此系数)
+    
+    power_shortage = max(0, (max_demand_hourly * safety_factor) - min_potential_power_hourly);
+    %% --- MODIFICATION END ---
+    
     if power_shortage > 1e-3 % 如果功率不足 (允许一点点误差)
         power_penalty = power_shortage * large_penalty_factor;
         fitness = power_penalty; % 直接返回大惩罚，无需计算后续指标
@@ -70,4 +77,3 @@ function fitness = hourly_ga_fitness_constrained(x, P_ac_hourly, P_ev_hourly, P_
         fitness = fitness + 1e6;
     end
 end
-
