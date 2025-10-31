@@ -93,7 +93,7 @@ function run_hourly_GA_PTDF()
 
     PTDF_matrix = rand(N_line, N_bus) * 0.2 - 0.1; 
     P_Line_Base = rand(N_line, T) * 50 - 25; 
-    P_Line_Max = rand(N_line, 1) * 50 + 50; 
+    P_Line_Max = rand(N_line, 1) * 1000 + 50; 
 
     %% 3. 分层优化主循环
     U_ac_up_final = zeros(num_ac_total, T); U_ev_up_final = zeros(num_ev_total, T);
@@ -176,7 +176,7 @@ function run_hourly_GA_PTDF()
                 c_ac_up, c_ev_up, P_req_up_hourly(t_local), ...
                 n_ac_up_hourly, n_ev_up_hourly, ... 
                 Location_AC, Location_EV, PTDF_matrix, ... 
-                P_Line_Base(:, t_global), P_Line_Max, N_bus, N_line); % 传递 t_global 用于警告
+                P_Line_Base(:, t_global), P_Line_Max, N_bus, N_line,t_global); % 传递 t_global 用于警告
             
             if flag_up > 0
                 U_ac_up_h(:, t_local) = u_ac_up;
@@ -198,7 +198,7 @@ function run_hourly_GA_PTDF()
                 c_ac_down, c_ev_down, P_req_down_hourly(t_local), ...
                 n_ac_down_hourly, n_ev_down_hourly, ... 
                 Location_AC, Location_EV, PTDF_matrix, ... 
-                P_Line_Base(:, t_global), P_Line_Max, N_bus, N_line); % 传递 t_global 用于警告
+                P_Line_Base(:, t_global), P_Line_Max, N_bus, N_line,t_global); % 传递 t_global 用于警告
 
             if flag_down > 0
                 U_ac_down_h(:, t_local) = u_ac_down;
