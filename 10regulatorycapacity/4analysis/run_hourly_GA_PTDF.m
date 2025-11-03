@@ -66,8 +66,8 @@ function run_hourly_GA_PTDF()
     num_hours = floor(T / steps_per_hour);
     fprintf('仿真参数: dt=%.3f小时, 每小时步数=%d, 总小时数=%d\n', dt, steps_per_hour, num_hours);
 
-    P_grid_up_demand = (sum(AC_Up_raw) + sum(EV_Up_raw)) / T * (0.2 + 0.3*rand(T,1));
-    P_grid_down_demand = (sum(AC_Down_raw) + sum(EV_Down_raw)) / T * (0.15 + 0.25*rand(T,1));
+    P_grid_up_demand = (sum(AC_Up_raw) + sum(EV_Up_raw)) / T * (0.01 + 0.01*rand(T,1));
+    P_grid_down_demand = (sum(AC_Down_raw) + sum(EV_Down_raw)) / T * (0.01 + 0.01*rand(T,1));
     c_ac_up = ones(num_ac_total, 1) * 0.05; c_ev_up = ones(num_ev_total, 1) * 0.04;
     c_ac_down = ones(num_ac_total, 1) * 0.03; c_ev_down = ones(num_ev_total, 1) * 0.02;
     eps_val = 1e-6;
