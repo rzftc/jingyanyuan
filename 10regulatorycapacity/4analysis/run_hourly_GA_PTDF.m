@@ -1,4 +1,4 @@
-% run_hourly_GA_PTDF.m (已按 Task 1 和 Task 2 修改)
+% run_hourly_GA_PTDF.m (已按 Task 1 和 Task 2 修改, 并按您的要求修改了电网指令生成)
 function run_hourly_GA_PTDF()
     %% 内存优化的分层调度脚本 (版本 9: 均匀分配 + 智能上层GA)
     clc; close all; clear;
@@ -52,6 +52,7 @@ function run_hourly_GA_PTDF()
     m_individual.EV_Down_Individual = -P_ev_potential_down_full;
     clear P_ac_potential_full P_ev_potential_full P_ac_potential_down_full P_ev_potential_down_full data_struct sim_results;
 
+    % AC_Up_raw 等是 (1xT) 的行向量
     AC_Up_raw = sum(m_individual.AC_Up_Individual, 1);
     EV_Up_raw = sum(m_individual.EV_Up_Individual, 1);
     AC_Down_raw = sum(abs(m_individual.AC_Down_Individual), 1);
@@ -66,8 +67,27 @@ function run_hourly_GA_PTDF()
     num_hours = floor(T / steps_per_hour);
     fprintf('仿真参数: dt=%.3f小时, 每小时步数=%d, 总小时数=%d\n', dt, steps_per_hour, num_hours);
 
-    P_grid_up_demand = (sum(AC_Up_raw) + sum(EV_Up_raw)) / T * (0.01 + 0.01*rand(T,1));
-    P_grid_down_demand = (sum(AC_Down_raw) + sum(EV_Down_raw)) / T * (0.01 + 0.01*rand(T,1));
+    % ==================== 【修改开始】 ====================
+    % 您的需求：根据瞬时总潜力生成电网调节功率，使其总小于AC和EV的总调节潜力
+
+    % 1. 计算每个时间点的瞬时总潜力 (T x 1 列向量)
+    Total_Up_Potential_t = (AC_Up_raw + EV_Up_raw)';
+    Total_Down_Potential_t = (AC_Down_raw + EV_Down_raw)';
+
+    % 2. 定义随机缩放因子 (例如，需求为总潜力的 20% 到 80% 之间)
+    % 确保因子小于 1
+    scaling_factor_up = (0.2 + (0.8 - 0.2) * rand(T, 1));
+    scaling_factor_down = (0.2 + (0.6 - 0.2) * rand(T, 1)); % 下调使用 20% 到 60%
+
+    % 3. 生成新的电网需求 (T x 1 列向量)
+    P_grid_up_demand = Total_Up_Potential_t .* scaling_factor_up;
+    P_grid_down_demand = Total_Down_Potential_t .* scaling_factor_down;
+    
+    fprintf('电网调节指令已更新：基于瞬时总潜力的 %.1f%%-%.1f%% (上调) 和 %.1f%%-%.1f%% (下调) 生成。\n', ...
+            min(scaling_factor_up)*100, max(scaling_factor_up)*100, ...
+            min(scaling_factor_down)*100, max(scaling_factor_down)*100);
+    % ==================== 【修改结束】 ====================
+
     c_ac_up = ones(num_ac_total, 1) * 0.05; c_ev_up = ones(num_ev_total, 1) * 0.04;
     c_ac_down = ones(num_ac_total, 1) * 0.03; c_ev_down = ones(num_ev_total, 1) * 0.02;
     eps_val = 1e-6;
