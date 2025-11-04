@@ -1,5 +1,5 @@
 % run_hourly_GA_PTDF.m (已按 Task 1 和 Task 2 修改, 并按您的要求修改了电网指令生成)
-function run_hourly_GA_PTDF()
+function run_hourly_GA_PTDF_with_hourly_SDCIrho()
     %% 内存优化的分层调度脚本 (版本 9: 均匀分配 + 智能上层GA)
     clc; close all; clear;
 
@@ -121,6 +121,16 @@ function run_hourly_GA_PTDF()
     cost_up_final = zeros(1, T); cost_down_final = zeros(1, T);
     P_ac_dispatched_opt_up_t = zeros(1,T); P_ev_dispatched_opt_up_t = zeros(1,T);
     P_ac_dispatched_opt_down_t = zeros(1,T); P_ev_dispatched_opt_down_t = zeros(1,T);
+    
+    % 新增：用于存储每一步的rho和sdci值
+    rho_up_raw_hourly = zeros(1, num_hours);
+    sdci_up_raw_hourly = zeros(1, num_hours);
+    rho_up_opt_hourly = zeros(1, num_hours);
+    sdci_up_opt_hourly = zeros(1, num_hours);
+    rho_down_raw_hourly = zeros(1, num_hours);
+    sdci_down_raw_hourly = zeros(1, num_hours);
+    rho_down_opt_hourly = zeros(1, num_hours);
+    sdci_down_opt_hourly = zeros(1, num_hours);
 
     fprintf('\n开始分层优化 (共 %d 小时)...\n', num_hours);
     tic_loop = tic;
@@ -167,6 +177,18 @@ function run_hourly_GA_PTDF()
             Location_AC, Location_EV, PTDF_matrix, P_Line_Base_hourly, P_Line_Max, N_bus, N_line);
         fprintf('  GA结果(下调): n_ac=%d, n_ev=%d\n', n_ac_down_hourly, n_ev_down_hourly);
         % ************************************************
+        
+        % 新增：计算优化前的rho和sdci
+        avg_P_ac_raw_up_t = sum(P_ac_up_hourly, 1)' ./ (num_ac_total + eps_val);
+        avg_P_ev_raw_up_t = sum(P_ev_up_hourly, 1)' ./ (num_ev_total + eps_val);
+        sdci_up_raw_hourly(h) = calculateSDCI(repmat(num_ac_total, current_steps_in_hour, 1), repmat(num_ev_total, current_steps_in_hour, 1), avg_P_ac_raw_up_t, avg_P_ev_raw_up_t);
+        rho_up_raw_hourly(h) = calculateSpearmanRho(repmat(num_ac_total, current_steps_in_hour, 1), avg_P_ac_raw_up_t, repmat(num_ev_total, current_steps_in_hour, 1), avg_P_ev_raw_up_t);
+
+        avg_P_ac_raw_down_t = sum(P_ac_down_hourly, 1)' ./ (num_ac_total + eps_val);
+        avg_P_ev_raw_down_t = sum(P_ev_down_hourly, 1)' ./ (num_ev_total + eps_val);
+        sdci_down_raw_hourly(h) = calculateSDCI(repmat(num_ac_total, current_steps_in_hour, 1), repmat(num_ev_total, current_steps_in_hour, 1), avg_P_ac_raw_down_t, avg_P_ev_raw_down_t);
+        rho_down_raw_hourly(h) = calculateSpearmanRho(repmat(num_ac_total, current_steps_in_hour, 1), avg_P_ac_raw_down_t, repmat(num_ev_total, current_steps_in_hour, 1), avg_P_ev_raw_down_t);
+
 
         % --- 3.3 下层MILP调度 ---
         fprintf('  下层MILP: 在 %d 个时间步内执行约束调度 (含PTDF)...\n', current_steps_in_hour);
@@ -230,6 +252,25 @@ function run_hourly_GA_PTDF()
                 cost_down_h(t_local) = NaN;
             end
         end % 结束 parfor t_local
+        
+        % 新增：计算优化后的rho和sdci
+        n_ac_opt_up_t_h = sum(U_ac_up_h, 1)';
+        n_ev_opt_up_t_h = sum(U_ev_up_h, 1)';
+        p_ac_opt_up_t_h = sum(P_ac_up_hourly .* U_ac_up_h, 1)';
+        p_ev_opt_up_t_h = sum(P_ev_up_hourly .* U_ev_up_h, 1)';
+        avg_P_ac_opt_up_h = p_ac_opt_up_t_h ./ (n_ac_opt_up_t_h + eps_val);
+        avg_P_ev_opt_up_h = p_ev_opt_up_t_h ./ (n_ev_opt_up_t_h + eps_val);
+        sdci_up_opt_hourly(h) = calculateSDCI(n_ac_opt_up_t_h, n_ev_opt_up_t_h, avg_P_ac_opt_up_h, avg_P_ev_opt_up_h);
+        rho_up_opt_hourly(h) = calculateSpearmanRho(n_ac_opt_up_t_h, avg_P_ac_opt_up_h, n_ev_opt_up_t_h, avg_P_ev_opt_up_h);
+
+        n_ac_opt_down_t_h = sum(U_ac_down_h, 1)';
+        n_ev_opt_down_t_h = sum(U_ev_down_h, 1)';
+        p_ac_opt_down_t_h = sum(P_ac_down_hourly .* U_ac_down_h, 1)';
+        p_ev_opt_down_t_h = sum(P_ev_down_hourly .* U_ev_down_h, 1)';
+        avg_P_ac_opt_down_h = p_ac_opt_down_t_h ./ (n_ac_opt_down_t_h + eps_val);
+        avg_P_ev_opt_down_h = p_ev_opt_down_t_h ./ (n_ev_opt_down_t_h + eps_val);
+        sdci_down_opt_hourly(h) = calculateSDCI(n_ac_opt_down_t_h, n_ev_opt_down_t_h, avg_P_ac_opt_down_h, avg_P_ev_opt_down_h);
+        rho_down_opt_hourly(h) = calculateSpearmanRho(n_ac_opt_down_t_h, avg_P_ac_opt_down_h, n_ev_opt_down_t_h, avg_P_ev_opt_down_h);
 
         % --- 将小时结果存入最终结果矩阵 ---
         U_ac_up_final(:, current_steps_indices) = U_ac_up_h;
@@ -297,6 +338,27 @@ function run_hourly_GA_PTDF()
     subplot(2,2,2); plot(time_axis, Total_Down_Aggregated_Raw, 'b--', 'LineWidth', 1.5, 'DisplayName', 'Raw Aggregated'); hold on; plot(time_axis, Total_Down_Optimal_Agg, 'r-', 'LineWidth', 1.5, 'DisplayName', 'Optimized (Layered+PTDF)'); plot(time_axis, P_grid_down_demand, 'k:', 'LineWidth', 1, 'DisplayName', 'Down-Regulation Demand'); hold off; title('Down-Regulation Power Comparison'); xlabel('Time Step'); ylabel('Power (kW)'); legend('show', 'Location', 'best'); grid on;
     subplot(2,2,3); indicator_names_up = {'SDCI⁺', 'Spearman ρ⁺'}; values_raw_up = [SDCI_up_raw; rho_up_raw]; values_opt_up = [SDCI_up_opt; rho_up_opt]; bar_data_up = [values_raw_up, values_opt_up]; b_up = bar(bar_data_up); set(gca, 'XTickLabel', indicator_names_up); ylabel('Indicator Value'); ylim([-1.1, 1.1]); legend([b_up(1) b_up(2)], {'Raw Aggregated', 'Optimized (Layered+PTDF)'}, 'Location', 'northoutside', 'Orientation','horizontal'); title('Up-Regulation Complementarity & Correlation'); grid on; add_bar_labels(b_up, bar_data_up);
     subplot(2,2,4); indicator_names_down = {'SDCI⁻', 'Spearman ρ⁻'}; values_raw_down = [SDCI_down_raw; rho_down_raw]; values_opt_down = [SDCI_down_opt; rho_down_opt]; bar_data_down = [values_raw_down, values_opt_down]; b_down = bar(bar_data_down); set(gca, 'XTickLabel', indicator_names_down); ylabel('Indicator Value'); ylim([-1.1, 1.1]); legend([b_down(1) b_down(2)],{'Raw Aggregated', 'Optimized (Layered+PTDF)'}, 'Location', 'northoutside', 'Orientation','horizontal'); title('Down-Regulation Complementarity & Correlation'); grid on; add_bar_labels(b_down, bar_data_down);
+    
+    % 新增：绘制每一步的rho和sdci值
+    figure('Position', [100, 100, 1200, 800]);
+    sgtitle('Hourly Complementarity and Correlation Metrics', 'FontSize', 16);
+    subplot(2,2,1);
+    plot(1:num_hours, sdci_up_raw_hourly, 'b--', 'DisplayName', 'Raw SDCI+'); hold on;
+    plot(1:num_hours, sdci_up_opt_hourly, 'r-', 'DisplayName', 'Optimized SDCI+');
+    title('Hourly Up-Regulation SDCI'); xlabel('Hour'); ylabel('SDCI'); legend('show'); grid on;
+    subplot(2,2,2);
+    plot(1:num_hours, rho_up_raw_hourly, 'b--', 'DisplayName', 'Raw Rho+'); hold on;
+    plot(1:num_hours, rho_up_opt_hourly, 'r-', 'DisplayName', 'Optimized Rho+');
+    title('Hourly Up-Regulation Rho'); xlabel('Hour'); ylabel('Rho'); legend('show'); grid on;
+    subplot(2,2,3);
+    plot(1:num_hours, sdci_down_raw_hourly, 'b--', 'DisplayName', 'Raw SDCI-'); hold on;
+    plot(1:num_hours, sdci_down_opt_hourly, 'r-', 'DisplayName', 'Optimized SDCI-');
+    title('Hourly Down-Regulation SDCI'); xlabel('Hour'); ylabel('SDCI'); legend('show'); grid on;
+    subplot(2,2,4);
+    plot(1:num_hours, rho_down_raw_hourly, 'b--', 'DisplayName', 'Raw Rho-'); hold on;
+    plot(1:num_hours, rho_down_opt_hourly, 'r-', 'DisplayName', 'Optimized Rho-');
+    title('Hourly Down-Regulation Rho'); xlabel('Hour'); ylabel('Rho'); legend('show'); grid on;
+
 
     %% 6. 命令行输出汇总 (不变)
     disp(' ');
