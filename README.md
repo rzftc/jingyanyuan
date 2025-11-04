@@ -1,170 +1,180 @@
-# 虚拟电厂（AC/EV）调节潜力仿真框架 README
+# 代码库结构与功能概览（虚拟电厂 AC/EV 调节潜力仿真框架）
 
-> 本仓库围绕“空调（AC）与电动汽车（EV）”聚合体的调节潜力建模、仿真、可视化与调度优化，包含数据生成、个体建模、互补性指标、敏感性分析、空间特性分析、规模预测，以及应急调度等模块。
+> 本概览文档面向**快速上手与维护**：梳理目录结构、核心脚本职责、典型运行路径与产出物。代码主要使用 **MATLAB (.m)**。
 
-## 1. 项目概述
-本项目提供虚拟电厂（含交流负荷AC与电动汽车EV）调节潜力的仿真框架，支持多时间尺度仿真、聚合控制策略验证及调节潜力分析，可模拟不同激励机制下的EV响应特性与SOC（状态-of-charge）动态变化，新增在线车辆统计与灵活性窗口计算功能。
+---
 
-## 2. 核心功能
-- 电动汽车（EV）充电行为与调节潜力仿真
-- 多时间尺度（长/短步长）控制策略实现
-- 虚拟SOC（原始/修正）计算与动态修正
-- 聚合功率跟踪与调节潜力（向上/向下）分析
-- 激励响应机制模拟（含参与度计算与灵活性窗口）
-- 在线车辆统计与状态分布分析
-- 多场景参数敏感性分析（支持激励电价范围扫描）
+## 一、顶层结构
 
-## 3. 代码结构
-### 3.1 主要模块
-- `EV/`：电动汽车相关仿真代码
-  - `6main/`：主程序入口
-    - `main_v5_S_modified.m`：支持修正SOC计算的EV仿真主程序（最新版）
-    - `main_v4_100.m`：基于Excel数据接口的完整版主程序
-  - `4EVupdate/`：EV状态更新函数
-    - `updateLockState.m`：EV闭锁状态（LockON/LockOFF/ON/OFF）动态切换
-    - `calculateVirtualSOC_upgrade.m`：优化版虚拟SOC计算（含原始/修正SOC）
-    - `calculateVirtualSOC_upgrade_ori.m`：原始版虚拟SOC计算（保留对比用）
-  - `999wastecode/`：历史版本代码
-    - `main_v2.m`：基础版本主程序（遵循论文模型结构）
-    - `main.m`：早期版本主程序
-    - `main_acc.m`：初始化向量化版本主程序
-    - `dataconvert.m`：数据转换辅助脚本
-- `10regulatorycapacity/`：调节潜力分析模块
-  - `7main/main_diff_delt_48_updown.m`：全功能虚拟电厂调节潜力分析系统（支持激励电价扫描）
-  - 实用工具脚本：
-    - `keepMFilesOnly.m`：仅保留指定目录下的.m文件
-    - `combineMFilesToTXT.m`：合并所有.m文件到单个TXT
-  - `999wastecode/`：
-    - `dtw.m`：动态时间规整算法实现
-- `0inputdata/`：输入数据模板
-  - `residential_all_models.xlsx`：EV参数模板（最新版主程序默认读取）
-  - `evdata.xlsx`：早期版本EV参数文件
-
-### 3.2 关键主程序说明
-| 程序路径 | 功能描述 | 核心特性 |
-|---------|---------|---------|
-| `EV/6main/main_v5_S_modified.m` | 修正SOC仿真主程序 | 支持短时间步状态更新、修正SOC计算、个体EV状态跟踪 |
-| `EV/6main/main_v4_100.m` | Excel数据接口完整版 | 基于Excel参数输入，支持100辆EV仿真，含基础可视化 |
-| `10regulatorycapacity/7main/main_diff_delt_48_updown.m` | 调节潜力分析系统 | 激励电价范围扫描、在线车辆统计、灵活性窗口计算 |
-| `EV/999wastecode/main_v2.m` | 基础版本主程序 | 保留论文模型结构，支持基础功率跟踪与SOC分析 |
-
-## 4. 核心算法说明
-### 4.1 虚拟SOC计算
-#### 4.1.1 原始SOC（`S_original`）
-反映实际充电量与期望充电量的偏差：
 ```
-S_original = -(E_actual - E_exp) / (C * r)
+jingyanyuan-main/
+├─ README.md                         # 仓库内原始说明（详细背景/公式/示例）
+└─ 10regulatorycapacity/            # 主体代码（数据→建模→仿真→分析→预测→调度）
 ```
-其中：
-- `E_actual`：实际累计充电量
-- `E_exp`：期望累计充电量（基于匀速充电模型）
-- `C`：电池容量，`r`：调节系数
 
-#### 4.1.2 修正SOC（`S_modified`）
-融合原始SOC与充电紧急程度指标，公式为：
+---
+
+## 二、核心目录与职责
+
+> 下列各目录互相衔接，建议按“**数据输入 → 初始化 → 个体模型 → 主仿真 → 分析/可视化 → 规模预测/空间分析/应急调度**”的链条使用。
+
+### 1) `10regulatorycapacity/0input_data` —— 输入数据生成/示例
+- **用途**：生成示例 Excel/CSV 输入，或按 24/48 步长构造 EV 负荷样本。
+- **代表脚本**
+  - `generateExampleExcel_real_24.m` / `generateExampleExcel_real_48.m`：生成 **真实结构**示例 Excel。
+  - `generateEVData.m` / `generateEVData_48.m` / `generateEV_48.m`：按指定粒度生成/整理 EV 数据。
+
+### 2) `10regulatorycapacity/1initialize` —— 初始化装置清单（AC/EV）
+- **用途**：从 Excel/CSV 读入原始清单与参数，构造仿真所需结构体。
+- **代表脚本**
+  - `initializeACsFromExcel.m`：初始化空调（AC）对象列表与参数。
+  - `initializeEVsFromExcel.m`：初始化电动汽车（EV）对象列表与充电参数。
+
+### 3) `10regulatorycapacity/2AC` —— AC 个体模型与可调节潜力
+- **用途**：计算单台 AC 的基线、S 指标（灵活度）、三参数 ABC、以及在激励下的功率调整潜力。
+- **代表脚本**
+  - `ACbaseP_single.m`：单体 AC **基线功率**计算。
+  - `calculateACS_single.m` / `calculateACABC_single.m`：单体 **S 指标**与 **ABC** 参数。
+  - `calculateACAdjustmentPotentia.m`：AC 的**向上/向下调节潜力**评估。
+  - `incentiveTempAC.m`：AC 在**温控/价格激励**下的响应。
+
+### 4) `10regulatorycapacity/3EV` —— EV 个体模型与可调节潜力
+- **用途**：描述 EV 充电行为、SOC（含虚拟/修正）与灵活性窗口，评估在不同激励机制下的调节潜力。
+- **代表脚本**
+  - `EVbaseP_single.m` / `EVbaseP_single_longstep.m` / `EVbaseP_ChargeUntilFull.m`：EV **基线充电曲线**（不同策略/步长）。
+  - `calculateEVS_single.m` / `calculateEVABC_single.m`：单体 **S/ABC** 指标。
+  - `calculateEVAdjustmentPotentia*.m`：EV **向上/向下可调潜力**（含新版/对比版）。
+  - 其它：`copyEVStruct.m`、`plotIncentiveResponse.m` 等辅助/可视化。
+
+### 5) `10regulatorycapacity/4analysis` —— 互补性/跟踪/优化分析
+- **用途**：统计学与经济性分析、AC-EV 互补性、聚合功率跟踪与**遗传算法(GA)** 优化调度。
+- **代表脚本**
+  - `calculateSpearmanRho.m` / `calculateSDCI.m`：互补性指标（相关性 rho、SDCI）。
+  - `run_hourly_GA_plus_Greedy.m`、`solve_total_time_dispatch_ga.m`：**GA + 贪心**的调度求解器。
+  - `objective_function_ga*.m`、`nonlinear_constraints_ga*.m`、`hourly_ga_fitness_constrained*.m`：GA 目标/约束/适应度。
+  - `eco_test*.m`：经济性测试与 PTDF 变体。
+
+### 6) `10regulatorycapacity/5userUncertainties` —— 用户侧不确定性/参与度
+- **用途**：外生价格/激励曲线、设备参与概率、向上/向下响应差异等的不确定性建模。
+- **代表脚本**
+  - `calculateParticipation.m`：**参与度**与可用性估计。
+  - `incentiveTempEV.m` / `incentiveTempEV_updown.m` / `priceTemp.m`：**激励-响应**模板与价格场景。
+
+### 7) `10regulatorycapacity/6SensAnalyses` —— 敏感性分析
+- **用途**：对关键参数（价格、舒适度参数、SOC 修正系数、窗口门限等）进行扫描与梯度分析。
+- **代表脚本**
+  - `analyzeSensitivity.m` / `plotSensitivityCurves.m`：批量扫描+绘图。
+  - `computeGradients.m`：对目标/约束的参数敏感度估计。
+
+### 8) `10regulatorycapacity/7main` —— 主仿真入口（聚合 AC/EV）
+- **用途**：按**不同离散步长/求解策略**进行 AC+EV 聚合仿真与绘图。
+- **代表脚本**
+  - `AC_main.m`：仅 AC 的主流程示例。
+  - `ac_ev_simulation_*.m`：AC+EV **联合仿真主程序**（block / improve / new / slow 等版本）。
+  - `main_diff_delt_48*.m`：对比 **不同时间步长**（48步/日）策略与精度。
+  - `plot_*.m`：仿真结果可视化（充电功率、跟踪误差、r/dt 对比等）。
+
+### 9) `10regulatorycapacity/9predict` —— 规模/基础设施预测
+- **用途**：给出 AC/EV **装机规模、充电桩基础设施、节点级扩展**等预测。
+- **代表脚本**
+  - `ev_scale_prediction.m` / `ac_scale_prediction.m`：装机规模预测。
+  - `ev_charging_infra_prediction.m`：充电基础设施规模化需求。
+  - `predict_node_level.m`：**节点级**预测。
+
+### 10) `10regulatorycapacity/10spaceRelation` —— 空间特性与功能区分析
+- **用途**：统计 **不同功能区** 的设定温度/充电分布，分析 AC/EV 的空间异质性，生成空间分析输入。
+- **代表脚本**
+  - `classifyLocationByFunctionalArea.m`：根据规则**划分功能区**（如住宅/办公/商业等）。
+  - `aggregateSetpointCountsByArea.m` / `calculateSetpointProbabilitiesByArea.m`：**设定点统计/概率**。
+  - `analyzeACSpatialCharacteristics.m` / `analyzeEVSpatialCharacteristics.m`：AC/EV 的**空间特性**分析。
+  - `generateSpatialAnalysisInputFiles.m` / `loadSpatialAnalysisInputs.m`：空间分析输入/读取。
+
+### 11) `10regulatorycapacity/11stackburg` —— 应急调度与边际成本
+- **用途**：在应急/紧急窗口下的**虚拟电厂(VPP)出清**与**边际成本**分析。
+- **代表脚本**
+  - `dispatch_vpp_emergency_horizon.m`：VPP **应急出清**调度求解。
+  - `calculate_dispatch_cost_and_mc.m`：**调度成本与边际成本**计算。
+
+---
+
+## 三、典型工作流（建议顺序）
+
+1. **准备输入**（或复现实验）  
+   - 使用 `0input_data` 生成示例 Excel（24/48 步长），或将真实数据整理为相同字段。
+
+2. **初始化对象**  
+   - 运行 `1initialize/initializeACsFromExcel.m` 与 `initializeEVsFromExcel.m`，得到 AC/EV 结构体数组。
+
+3. **核对个体模型**  
+   - 通过 `2AC`、`3EV` 中的基线/指标脚本，抽样验证 **S/ABC/潜力** 计算是否符合业务认知。
+
+4. **聚合主仿真**  
+   - 选择 `7main/ac_ev_simulation_*.m` 之一执行 AC+EV 联合仿真；如仅 AC，使用 `AC_main.m`。
+
+5. **分析与可视化**  
+   - 调用 `4analysis` 的互补性/跟踪/优化脚本，或 `6SensAnalyses` 对关键参数做敏感性分析。  
+   - 如涉**空间维度**，使用 `10spaceRelation` 进行功能区统计与空间特性评估。
+
+6. **规模与应急**  
+   - 使用 `9predict` 做规模/基础设施/节点级预测；在**应急场景**下，使用 `11stackburg` 做应急调度与 MC 评估。
+
+---
+
+## 四、输入/输出约定（摘要）
+
+- **输入**：
+  - Excel/CSV（设备清单、地理/功能区、价格/激励、出行与到离网信息、容量与 SOC 参数等）。
+  - 统一的**时间步长**（常见：24 或 48 步/日），脚本名已标注步长版本。
+
+- **输出**：
+  - 聚合功率轨迹、跟踪误差、S/ABC/SDCI/rho 等指标表与图。
+  - 预测结果（规模/桩数/节点级）、空间分布统计。
+  - 优化/调度结果（GA 出清、应急出清、成本与边际成本）。
+
+---
+
+## 五、运行环境与依赖（建议）
+
+- **MATLAB R2020a+**（实测更高版本兼容性更好）。
+- 可能用到的工具箱：
+  - **Optimization Toolbox / Global Optimization Toolbox**（GA 相关函数）。
+  - **Statistics and Machine Learning Toolbox**（互补性/统计分析）。
+- 操作步骤：克隆仓库 → 打开 `10regulatorycapacity` 为工作目录 → 依序运行「典型工作流」。
+
+---
+
+## 六、命名/版本提示
+
+- 带有 `*_48`、`*_24` 的文件表示**时间步长版本**；`*_new`/`*_improve`/`*_slow` 表示不同实现/性能权衡。
+- `calculate*` / `EVbaseP*` / `ACbaseP*`：通常为**算法/模型计算**；`plot*` 为可视化；`*test*` 为示例/自测脚本。
+- GA/出清相关脚本集中在 `4analysis` 与 `11stackburg`。
+
+---
+
+## 七、快速上手示例（伪代码顺序）
+
+```matlab
+% 1) 生成或准备输入
+generateExampleExcel_real_48;
+
+% 2) 初始化
+acList = initializeACsFromExcel('input_ac.xlsx');
+evList = initializeEVsFromExcel('input_ev.xlsx');
+
+% 3) 联合仿真（选择一种主程序）
+ac_ev_simulation_new(acList, evList, /* 参数集 */);
+
+% 4) 分析/可视化
+rho = calculateSpearmanRho( /* 轨迹 */ );
+sdci = calculateSDCI( /* 轨迹 */ );
+run_hourly_GA_plus_Greedy( /* 目标/约束/场景 */ );
 ```
-S_modified = alpha1 * S_original + alpha2 * I_value
-```
-其中紧急程度指标`I_value`计算：
-```
-I_value = tanh(kappa*(rho - 0.5) - gamma*(P_current/P_N)*t_elapsed)
-```
-- `rho`：剩余充电时间比率（`tau_rem / 剩余可用时间`）
-- `tau_rem`：剩余充电时间（动态更新）
-- `kappa`：tanh函数陡峭度（默认4）
-- `gamma`：时间衰减项强度（默认0.05）
-- `t_elapsed`：入网后经过时间
 
-### 4.2 状态更新机制（`updateLockState.m`）
-EV状态（LockON/LockOFF/ON/OFF）动态切换逻辑：
-1. **离网判断**：当前时间超出离网时间（`t > t_dep`）→ 强制LockOFF
-2. **电量满足**：实际电量≥目标电量（`E_actual ≥ E_tar`）→ LockOFF
-3. **时间不足**：剩余时间无法完成充电需求 → LockON
-4. **正常状态**：根据当前功率方向切换子状态（ON充电/OFF空闲）
-5. **边界保护**：修正SOC触及[-1,1]边界时强制切换子状态（防止振荡）
+---
 
-### 4.3 激励响应机制
-- **参与度计算**：基于激励电价与基准电价的对比动态生成参与概率
-- **灵活性窗口**：
-  ```
-  E_reg_min = max(E_tar_original - deltaE_down, E_in)  % 下调调节边界
-  E_reg_max = min(E_tar_original + deltaE_up, C_EV)   % 上调调节边界
-  ```
-  其中`deltaE_up`/`deltaE_down`由激励电价与功率约束计算得出
+### 维护建议
+- 新增算法时请在对应子目录新建 `*_new.m` 并保留旧版（便于 A/B 与回归测试）。
+- 与数据/步长强相关的脚本在文件名中**显式标注**（如 `_48`），避免误用。
+- 在 README/本概览中同步**入口脚本**与**示例数据字段**说明。
 
-### 4.4 多时间尺度控制
-- **长步长（`dt_long`）**：聚合控制决策、基准功率计算、λ*优化
-- **短步长（`dt_short`）**：EV状态实时更新、功率响应模拟、SOC动态修正
-
-## 5. 使用步骤
-1. **数据准备**：
-   - 手动准备：使用`0inputdata/residential_all_models.xlsx`填写EV参数
-   - 自动生成：运行`generateEVParameters_real(excelFile, 100, 0.6)`生成100辆EV数据
-2. **选择主程序**：
-   - 基础仿真：`EV/6main/main_v5_S_modified.m`
-   - 调节潜力分析：`10regulatorycapacity/7main/main_diff_delt_48_updown.m`
-3. **参数配置**：根据需求修改时间参数（`dt_short`/`dt_long`）、激励电价范围等
-4. **运行程序**：直接在MATLAB中运行主程序，自动生成仿真结果
-5. **结果查看**：程序自动生成可视化图表，结果数据存储于`results`结构体
-
-## 6. 参数说明
-| 关键参数 | 说明 | 示例值 |
-|---------|------|-------|
-| `dt_short` | 短时间步长（分钟） | 0.6分钟 |
-| `dt_long` | 长时间步长（分钟） | 60分钟 |
-| `t_sim` | 仿真总时长（分钟） | 1440分钟（24小时） |
-| `simulation_start_hour` | 仿真开始时间（小时） | 6（早上6点） |
-| `simulation_end_hour` | 仿真结束时间（小时） | 30（次日早上6点） |
-| `t_adj` | 调节时长（小时） | 1小时 |
-| `p_incentive_range` | 激励电价扫描范围（元） | 0~50（步长2） |
-| `alpha1/alpha2` | SOC修正权重系数 | 0.8/0.2 |
-| `kappa/gamma` | 紧急程度指标参数 | 4/0.05 |
-
-## 7. 实用小工具
-- **只保留 .m 文件**：`keepMFilesOnly.m`
-  - 功能：保留所选文件夹（含子文件夹）中的.m文件，删除其余所有文件
-  - 特性：支持Windows回收站、预览待删除文件、二次确认；可选清理空目录
-  - **使用方式**：将脚本置于MATLAB路径，命令行输入`keepMFilesOnly`，按指引执行
-  - 可调参数：`forceDelete`（强制删除）、`removeEmptyDirs`（清理空目录）等
-
-- **合并 .m 到单个 txt**：`combineMFilesToTXT.m`
-  - 功能：递归收集子目录所有`.m`文件，按相对路径排序后写入UTF-8编码文本
-  - 特性：自动过滤隐藏文件夹（Windows）、保留文件结构标头
-  - **示例**：
-    ```matlab
-    combineMFilesToTXT(pwd, fullfile(pwd, 'all_m_code.txt'))
-    ```
-
-## 8. 常见问题（FAQ）
-- **Excel 文件名不匹配**：最新主程序默认读取`residential_all_models.xlsx`，若使用其他命名需在入口脚本中修改。早期版本可能使用`evdata.xlsx`。
-- **缺少工具箱**：
-  - GA 相关报错 → 安装 Global Optimization Toolbox；
-  - `intlinprog` 报错 → 安装 Optimization Toolbox；
-  - `parfor` 报错 → 安装 Parallel Computing Toolbox；
-  - 秩相关计算异常 → 安装 Statistics and Machine Learning Toolbox。
-- **图像未生成**：确认`plot_*`脚本中数据路径与仿真输出一致，脚本默认导出`*.png`到当前目录。
-- **SOC计算异常**：检查`C`（电池容量）和`r`（调节系数）是否为非零值，避免除零错误。
-
-## 9. 可视化输出
-仿真程序自动生成关键分析图表，包括：
-- 功率跟踪与λ*动态对比（长/短步长数据）
-- 聚合SOC与个体SOC（原始/修正）变化分析
-- 特定EV（如第10辆）的SOC与当前功率对比
-- 调节潜力（向上/向下）随激励电价的变化曲线
-- 在线车辆数量统计与状态分布
-
-## 10. 备注
-- 仓库未包含统一 License 文件；如需开源发布或对外共享，请补充许可与版权说明。
-- 若需要 Docker/CI 配置或学术引用模板，可在 issue 中提出，本 README 可继续扩展。
-- 历史版本代码（`999wastecode/`）仅作参考，建议使用`6main/`和`10regulatorycapacity/7main/`下的最新程序。
-
-
-### 下载说明
-目前代码以源代码形式提供，可通过以下方式获取：
-1. 克隆代码仓库（若提供版本控制）：
-   ```bash
-   git clone [仓库URL]
-   ```
-2. 直接下载代码压缩包（请联系项目维护者获取最新版本）
-
-建议使用 MATLAB 2020b 及以上版本运行，确保已安装所需工具箱（见FAQ部分）。
+—— 完 ——
