@@ -1,46 +1,149 @@
-% run_hourly_GA_PTDF.m (已按 Task 1 和 Task 2 修改, 并按您的要求修改了电网指令生成)
+% run_hourly_GA_PTDF_with_hourly_SDCIrho.m (版本 10: 支持多文件按行数限制加载)
 function run_hourly_GA_PTDF_with_hourly_SDCIrho()
-    %% 内存优化的分层调度脚本 (版本 9: 均匀分配 + 智能上层GA)
+    %% 内存优化的分层调度脚本 (版本 10: 支持按文件指定加载数量)
     clc; close all; clear;
 
     % --- 1. 加载数据 ---
-    chunk_file_to_load = 'chunk_results/results_chunk_1.mat'; 
-    fprintf('正在加载分块数据: %s\n', chunk_file_to_load);
-    try
-        data_struct = load(chunk_file_to_load);
-        if isfield(data_struct, 'results')
-            sim_results = data_struct.results;
-        else
-            error('在 %s 文件中未找到 "results" 结构体。', chunk_file_to_load);
-        end
-    catch ME
-        error('加载数据文件 %s 失败: %s', chunk_file_to_load, ME.message);
-    end
+    
+    % ==================== 【修改开始：支持按文件指定加载数量】 ====================
+    % 定义要加载的分块文件及其行数限制
+    % 'ac_rows' 和 'ev_rows' 设置为 inf 表示加载该文件中的所有设备
+    chunk_load_config = [
+        struct('file', 'chunk_results/results_chunk_1.mat', 'ac_rows', inf, 'ev_rows', inf),
+        struct('file', 'chunk_results/results_chunk_2.mat', 'ac_rows', inf, 'ev_rows', inf),
+        struct('file', 'chunk_results/results_chunk_3.mat', 'ac_rows', inf, 'ev_rows', inf)
+        % 您可以在此处添加更多文件:
+        % struct('file', 'chunk_results/results_chunk_3.mat', 'ac_rows', 500, 'ev_rows', 500)
+    ];
+    
+    fprintf('准备加载 %d 个分块文件 (带自定义行数限制)...\n', length(chunk_load_config));
 
-    % --- 从 results 结构体中提取数据 ---
-    if isfield(sim_results, 'AC_Up_Individual')
-        P_ac_potential_full = sim_results.AC_Up_Individual;
-    else
-        P_ac_potential_full = zeros(0, 481); 
+    % 初始化用于聚合所有分块数据的矩阵
+    P_ac_potential_full = [];
+    P_ev_potential_full = [];
+    P_ac_potential_down_full = [];
+    P_ev_potential_down_full = [];
+    T_global = 0; % 用于检查所有文件的时间步长是否一致
+
+    for i = 1:length(chunk_load_config)
+        config = chunk_load_config(i);
+        chunk_file = config.file;
+        
+        fprintf('  正在加载分块数据: %s (AC行数: %s, EV行数: %s)\n', ...
+            chunk_file, num2str(config.ac_rows), num2str(config.ev_rows));
+        
+        if ~exist(chunk_file, 'file')
+            warning('文件 %s 未找到，已跳过。', chunk_file);
+            continue;
+        end
+        
+        try
+            data_struct = load(chunk_file);
+            if isfield(data_struct, 'results')
+                sim_results = data_struct.results;
+            else
+                warning('在 %s 文件中未找到 "results" 结构体，已跳过。', chunk_file);
+                continue;
+            end
+        catch ME
+            warning('加载数据文件 %s 失败: %s，已跳过。', chunk_file, ME.message);
+            continue;
+        end
+
+        % 提取数据并检查时间维度
+        T_current_chunk = 0;
+
+        % 提取 AC 上调
+        if isfield(sim_results, 'AC_Up_Individual') && ~isempty(sim_results.AC_Up_Individual)
+            T_current_chunk = size(sim_results.AC_Up_Individual, 2);
+            if T_global == 0
+                T_global = T_current_chunk;
+            elseif T_global ~= T_current_chunk
+                warning('文件 %s 的时间步 (%d) 与全局 T (%d) 不匹配，已跳过。', chunk_file, T_current_chunk, T_global);
+                continue;
+            end
+            
+            ac_data_up = sim_results.AC_Up_Individual;
+            rows_to_take_ac = min(config.ac_rows, size(ac_data_up, 1));
+            P_ac_potential_full = [P_ac_potential_full; ac_data_up(1:rows_to_take_ac, :)];
+            fprintf('    -> 已聚合 %d / %d 条 AC Up 记录。\n', rows_to_take_ac, size(ac_data_up, 1));
+        end
+        
+        % 提取 EV 上调
+        if isfield(sim_results, 'EV_Up_Individual') && ~isempty(sim_results.EV_Up_Individual)
+            T_current_chunk = size(sim_results.EV_Up_Individual, 2);
+            if T_global == 0
+                T_global = T_current_chunk;
+            elseif T_global ~= T_current_chunk
+                warning('文件 %s (EV Up) 的时间步 (%d) 与全局 T (%d) 不匹配，已跳过。', chunk_file, T_current_chunk, T_global);
+                continue;
+            end
+
+            ev_data_up = sim_results.EV_Up_Individual;
+            rows_to_take_ev = min(config.ev_rows, size(ev_data_up, 1));
+            P_ev_potential_full = [P_ev_potential_full; ev_data_up(1:rows_to_take_ev, :)];
+            fprintf('    -> 已聚合 %d / %d 条 EV Up 记录。\n', rows_to_take_ev, size(ev_data_up, 1));
+        end
+
+        % 提取 AC 下调
+        if isfield(sim_results, 'AC_Down_Individual') && ~isempty(sim_results.AC_Down_Individual)
+            T_current_chunk = size(sim_results.AC_Down_Individual, 2);
+            if T_global == 0
+                T_global = T_current_chunk;
+            elseif T_global ~= T_current_chunk
+                warning('文件 %s (AC Down) 的时间步 (%d) 与全局 T (%d) 不匹配，已跳过。', chunk_file, T_current_chunk, T_global);
+                continue;
+            end
+
+            ac_data_down = abs(sim_results.AC_Down_Individual);
+            rows_to_take_ac = min(config.ac_rows, size(ac_data_down, 1));
+            P_ac_potential_down_full = [P_ac_potential_down_full; ac_data_down(1:rows_to_take_ac, :)];
+            fprintf('    -> 已聚合 %d / %d 条 AC Down 记录。\n', rows_to_take_ac, size(ac_data_down, 1));
+        end
+
+        % 提取 EV 下调
+        if isfield(sim_results, 'EV_Down_Individual') && ~isempty(sim_results.EV_Down_Individual)
+            T_current_chunk = size(sim_results.EV_Down_Individual, 2);
+            if T_global == 0
+                T_global = T_current_chunk;
+            elseif T_global ~= T_current_chunk
+                warning('文件 %s (EV Down) 的时间步 (%d) 与全局 T (%d) 不匹配，已跳过。', chunk_file, T_current_chunk, T_global);
+                continue;
+            end
+
+            ev_data_down = abs(sim_results.EV_Down_Individual);
+            rows_to_take_ev = min(config.ev_rows, size(ev_data_down, 1));
+            P_ev_potential_down_full = [P_ev_potential_down_full; ev_data_down(1:rows_to_take_ev, :)];
+            fprintf('    -> 已聚合 %d / %d 条 EV Down 记录。\n', rows_to_take_ev, size(ev_data_down, 1));
+        end
     end
-    if isfield(sim_results, 'EV_Up_Individual')
-        P_ev_potential_full = sim_results.EV_Up_Individual;
-    else
-        P_ev_potential_full = zeros(0, 481);
-    end
-    if isfield(sim_results, 'AC_Down_Individual')
-        P_ac_potential_down_full = abs(sim_results.AC_Down_Individual);
-    else
-        P_ac_potential_down_full = zeros(0, 481);
-    end
-    if isfield(sim_results, 'EV_Down_Individual')
-        P_ev_potential_down_full = abs(sim_results.EV_Down_Individual);
-    else
-        P_ev_potential_down_full = zeros(0, 481);
+    
+    if T_global == 0
+        error('未能从任何文件中成功加载数据。');
     end
 
     [num_ac_total, T] = size(P_ac_potential_full);
     [num_ev_total, ~] = size(P_ev_potential_full);
+    
+    % 确保 T 保持一致
+    if T ~= T_global
+        warning('AC 和 EV 数据的时间步不一致。使用 AC 的 T = %d', T);
+    end
+    if isempty(P_ac_potential_full)
+        P_ac_potential_full = zeros(0, T);
+    end
+    if isempty(P_ev_potential_full)
+        P_ev_potential_full = zeros(0, T);
+    end
+    if isempty(P_ac_potential_down_full)
+        P_ac_potential_down_full = zeros(0, T);
+    end
+     if isempty(P_ev_potential_down_full)
+        P_ev_potential_down_full = zeros(0, T);
+    end
+
+    % ==================== 【修改结束】 ====================
+
 
     % --- 将数据加载到硬盘 matfile 以模拟原始脚本的内存优化 ---
     individual_file = 'temp_individual_data_for_opt.mat';
