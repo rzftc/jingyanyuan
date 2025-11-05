@@ -29,14 +29,14 @@ function Metrics = calculate_solution_metrics(u_optimal, SimData, name)
     try
         % (v2 修正：确保 calculateSDCI 和 calculateSpearmanRho 的输入参数顺序)
         % (假设您的库函数签名是: (n_AC, deltaP_AC, n_EV, deltaP_EV))
-        Metrics.SDCI = calculateSDCI(n_AC_dummy, deltaP_AC_dummy, n_EV_dummy, deltaP_EV_dummy);
+        Metrics.SDCI = calSDCI(n_AC_dummy, deltaP_AC_dummy, n_EV_dummy, deltaP_EV_dummy);
     catch ME_sdci
         fprintf('错误: 调用 calculateSDCI 失败: %s\n', ME_sdci.message);
         Metrics.SDCI = NaN;
     end
     
     try
-        Metrics.Rho = calculateSpearmanRho(n_AC_dummy, deltaP_AC_dummy, n_EV_dummy, deltaP_EV_dummy);
+        Metrics.Rho = calRho(n_AC_dummy, deltaP_AC_dummy, n_EV_dummy, deltaP_EV_dummy);
     catch ME_rho
         fprintf('错误: 调用 calculateSpearmanRho 失败: %s\n', ME_rho.message);
         Metrics.Rho = NaN;
