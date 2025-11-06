@@ -1,87 +1,115 @@
-% load_simulation_data_from_chunks.m
 function SimData = load_simulation_data_from_chunks(chunk_dir, selected_mat_files, direction)
-    % (v3) 从 chunk_results 加载数据，并验证 AC 和 EV 数据是否 *同时* 存在
+    % load_simulation_data_from_chunks (v8 - 直接读取聚合数据 & 保留原始符号)
     
     if isempty(selected_mat_files)
-        error('您没有在主脚本的 "selected_mat_files" 变量中指定任何文件。');
+        error('未指定要加载的文件 (selected_mat_files 为空)。');
     end
     
     all_p_AC = {};
     all_p_EV = {};
+    
+    % [新增] 初始化聚合功率累加器
+    P_AC_agg_accumulator = [];
+    P_EV_agg_accumulator = [];
+
     T_ac = 0;
     T_ev = 0;
     
-    % 确定字段名
+    % 根据调节方向确定要读取的字段名
     if strcmpi(direction, 'Up')
-        p_field_ac = 'AC_Up_Individual';
-        p_field_ev = 'EV_Up_Individual';
+        p_field_ac_ind = 'AC_Up_Individual';
+        p_field_ev_ind = 'EV_Up_Individual';
+        p_field_ac_agg = 'AC_Up';    % 聚合数据字段
+        p_field_ev_agg = 'EV_Up';
     elseif strcmpi(direction, 'Down')
-        p_field_ac = 'AC_Down_Individual';
-        p_field_ev = 'EV_Down_Individual';
+        p_field_ac_ind = 'AC_Down_Individual';
+        p_field_ev_ind = 'EV_Down_Individual';
+        p_field_ac_agg = 'AC_Down';  % 聚合数据字段
+        p_field_ev_agg = 'EV_Down';
     else
         error('无效的调节方向: %s. 必须是 "Up" 或 "Down".', direction);
     end
 
-    % 遍历指定的文件列表
     for i = 1:length(selected_mat_files)
         file_name = selected_mat_files{i};
         file_path = fullfile(chunk_dir, file_name);
         
         if ~exist(file_path, 'file')
-            warning('指定的文件未找到: %s. 跳过此文件。', file_path);
+            warning('文件未找到: %s，已跳过。', file_path);
             continue;
         end
         
-        fprintf('  正在加载指定文件: %s\n', file_name);
+        fprintf('  正在加载文件: %s ...\n', file_name);
         try
             data = load(file_path);
-            
-            % 检查 AC 数据
-            if isfield(data, 'results') && isfield(data.results, p_field_ac)
-                ac_data = data.results.(p_field_ac);
-                if strcmpi(direction, 'Down'), ac_data = abs(ac_data); end
-                all_p_AC{end+1} = ac_data;
-                if T_ac == 0, T_ac = size(ac_data, 2); end
+            if ~isfield(data, 'results')
+                warning('文件 %s 中无 results 字段，跳过。', file_name);
+                continue;
             end
-            
-            % 检查 EV 数据
-            if isfield(data, 'results') && isfield(data.results, p_field_ev)
-                ev_data = data.results.(p_field_ev);
-                 if strcmpi(direction, 'Down'), ev_data = abs(ev_data); end
-                all_p_EV{end+1} = ev_data;
-                if T_ev == 0, T_ev = size(ev_data, 2); end
+            res = data.results;
+
+            % --- 1. 加载个体数据 (保留原始符号) ---
+            if isfield(res, p_field_ac_ind)
+                all_p_AC{end+1} = res.(p_field_ac_ind);
+                if T_ac == 0, T_ac = size(all_p_AC{end}, 2); end
             end
-            
+            if isfield(res, p_field_ev_ind)
+                all_p_EV{end+1} = res.(p_field_ev_ind);
+                if T_ev == 0, T_ev = size(all_p_EV{end}, 2); end
+            end
+
+            % --- [新增] 2. 直接读取并累加聚合数据 ---
+            % 确保数据为行向量 (1 x T) 以便统一累加
+            if isfield(res, p_field_ac_agg)
+                agg_data = res.(p_field_ac_agg);
+                if iscolumn(agg_data), agg_data = agg_data'; end 
+                if isempty(P_AC_agg_accumulator)
+                    P_AC_agg_accumulator = agg_data;
+                else
+                    P_AC_agg_accumulator = P_AC_agg_accumulator + agg_data;
+                end
+            end
+             if isfield(res, p_field_ev_agg)
+                agg_data = res.(p_field_ev_agg);
+                if iscolumn(agg_data), agg_data = agg_data'; end
+                if isempty(P_EV_agg_accumulator)
+                    P_EV_agg_accumulator = agg_data;
+                else
+                    P_EV_agg_accumulator = P_EV_agg_accumulator + agg_data;
+                end
+            end
+
         catch ME
-            warning('加载文件 %s 时出错: %s. 跳过此文件。', file_name, ME.message);
+            warning('加载文件 %s 时出错: %s', file_name, ME.message);
         end
     end
     
-    % --- 数据验证 ---
-    if isempty(all_p_AC) && isempty(all_p_EV)
-        error('未能从指定的 .mat 文件中加载任何 AC 或 EV 数据。');
+    % 数据验证
+    if isempty(all_p_AC) || isempty(all_p_EV)
+        error('未能加载到有效的 AC 或 EV 数据。');
     end
-    
-    % *** 关键检查：确保两种数据都存在 ***
-    if isempty(all_p_AC)
-        error(['加载失败: 未能在 .mat 文件中找到 AC 数据 (字段: %s)。\n', ...
-               '请确保 ac_ev_simulation_block.m 在 runAC=true 的设置下运行。'], p_field_ac);
-    end
-    if isempty(all_p_EV)
-        error(['加载失败: 未能在 .mat 文件中找到 EV 数据 (字段: %s)。\n', ...
-               '请确保 ac_ev_simulation_block.m 在 runEV=true 的设置下运行。'], p_field_ev);
-    end
-
     if T_ac ~= T_ev
-        warning('AC 和 EV 数据的时间步长不匹配 (%d vs %d)，可能导致错误。', T_ac, T_ev);
+        warning('AC 和 EV 数据的时间步长不一致 (%d vs %d)。', T_ac, T_ev);
     end
     
-    % 沿设备维度 (维度1) 合并所有分块
-    SimData.p_AC = cat(1, all_p_AC{:}); % [nAC x T]
-    SimData.p_EV = cat(1, all_p_EV{:}); % [nEV x T]
-    
+    % 合并个体数据
+    SimData.p_AC = cat(1, all_p_AC{:});
+    SimData.p_EV = cat(1, all_p_EV{:});
     SimData.nAC = size(SimData.p_AC, 1);
     SimData.nEV = size(SimData.p_EV, 1);
     SimData.N_total = SimData.nAC + SimData.nEV;
-    SimData.T = T_ac; % 假设 AC 的时间步长是权威的
+    SimData.T = T_ac;
+    
+    % --- [新增] 存储直接读取的聚合数据 ---
+    % 如果文件中没有聚合数据，作为回退，使用现场求和
+    if isempty(P_AC_agg_accumulator)
+        SimData.P_AC_agg_loaded = sum(SimData.p_AC, 1);
+    else
+        SimData.P_AC_agg_loaded = P_AC_agg_accumulator;
+    end
+    if isempty(P_EV_agg_accumulator)
+        SimData.P_EV_agg_loaded = sum(SimData.p_EV, 1);
+    else
+        SimData.P_EV_agg_loaded = P_EV_agg_accumulator;
+    end
 end

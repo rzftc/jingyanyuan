@@ -1,183 +1,100 @@
 % main_vpp_optimizer_multi_objective.m
-% 解决VPP大规模调度优化问题的主脚本 (v5 - 多目标: 成本 + 互补性[SDCI & Rho])
+% 解决VPP大规模调度优化问题的主脚本 (v6 - 多目标 + 聚合数据读取 + 保留完整分析)
 clear; close all; clc;
 tic;
 
-%% 1. 定义全局输入
-% --- 用户必须修改的参数 ---
+%% 1. 全局配置
 chunk_results_dir = 'chunk_results'; 
-
-selected_mat_files = {
+selected_files = {
     'results_chunk_1.mat',
     'results_chunk_2.mat',
-    'results_chunk_3.mat' 
+    'results_chunk_3.mat'
 };
+run_directions = {'Up', 'Down'}; 
 
-directions_to_run = {'Up', 'Down'};
+W_cost = 0.6;              % 成本权重
+W_complementarity = 0.4;   % 互补性权重 (SDCI & Rho)
 
-% *** 多目标优化权重 ***
-% W_cost + W_complementarity 应该等于 1.0
-% W_cost = 1.0 -> 纯成本优化 (忽略 SDCI 和 Rho)
-% W_cost = 0.0 -> 纯互补性优化 (忽略成本)
-W_cost = 0.7; 
-W_complementarity = 0.3; % 这个权重将同时优化 SDCI 和 Rho
-% -------------------------
+fprintf('启动 VPP 多目标优化 (Cost=%.1f, Comp=%.1f)...\n', W_cost, W_complementarity);
 
-fprintf('开始执行VPP大规模优化 (多目标启发式)...\n');
-fprintf('优化权重: Cost=%.2f, Complementarity(SDCI+Rho)=%.2f\n', ...
-        W_cost, W_complementarity);
+%% 2. 主循环：按方向依次执行
+for d_idx = 1:length(run_directions)
+    this_dir = run_directions{d_idx};
+    fprintf('\n>>> 开始处理 %s (调节) 方向 >>>\n', upper(this_dir));
 
-%% 2. 调节方向主循环
-for dir_idx = 1:length(directions_to_run)
+    % --- 2.1 加载数据 ---
+    SimData = load_simulation_data_from_chunks(chunk_results_dir, selected_files, this_dir);
+    fprintf('数据加载完毕: AC=%d, EV=%d, T=%d\n', SimData.nAC, SimData.nEV, SimData.T);
+
+    % --- 2.2 生成配套输入 ---
+    OptIn = create_dummy_optimization_inputs(SimData);
+
+    % --- 2.3 准备优化变量 ---
+    % [修改] 使用预加载聚合数据的【幅度】来计算资源占比
+    P_AC_mag = abs(SimData.P_AC_agg_loaded);
+    P_EV_mag = abs(SimData.P_EV_agg_loaded);
+    P_Total_mag = P_AC_mag + P_EV_mag;
     
-    output_direction = directions_to_run{dir_idx};
-    
-    fprintf('\n====================================================\n');
-    fprintf('== [正在处理方向: %s 调节] ==\n', output_direction);
-    fprintf('====================================================\n');
-    
-    %% 2.1 加载仿真数据
-    fprintf('正在从 %s 加载并聚合 %s 潜力数据...\n', ...
-            chunk_results_dir, output_direction);
-    SimData = load_simulation_data_from_chunks(...
-        chunk_results_dir, selected_mat_files, output_direction);
+    Ratio_AC_t = zeros(1, SimData.T);
+    valid_t = P_Total_mag > 1e-9;
+    Ratio_AC_t(valid_t) = P_AC_mag(valid_t) ./ P_Total_mag(valid_t);
 
-    fprintf('加载完成: %d 台AC, %d 台EV, %d 个时间步。\n', ...
-            SimData.nAC, SimData.nEV, SimData.T);
+    dev_types = [ones(SimData.nAC,1); 2*ones(SimData.nEV,1)]; % 1=AC, 2=EV
+    p_all = [SimData.p_AC; SimData.p_EV];
+    c_all = [OptIn.DeviceCosts.c_AC; OptIn.DeviceCosts.c_EV];
 
-    %% 2.2 加载优化输入 (动态生成)
-    fprintf('正在为 %s 调节创建动态虚拟电网/成本输入...\n', output_direction);
-    OptInputs = create_dummy_optimization_inputs(SimData);
-    fprintf('虚拟数据创建完成。\n');
-
-    %% 2.3 计算基准互补性指标 (Ori)
-    fprintf('正在计算 %s 基准 (Ori) 互补性指标...\n', output_direction);
-    u_baseline_ac = SimData.p_AC > 0; % nAC x T
-    u_baseline_ev = SimData.p_EV > 0; % nEV x T
-    u_baseline = [u_baseline_ac; u_baseline_ev];
+    % --- [保留] 计算基准互补性指标 (Ori) ---
+    fprintf('正在计算 %s 基准 (Ori) 互补性指标...\n', this_dir);
+    % 使用绝对值判断基准参与状态 (兼容下调的负值)
+    u_baseline = [abs(SimData.p_AC) > 1e-4; abs(SimData.p_EV) > 1e-4];
+    % Metrics_ori = calculate_solution_metrics(u_baseline, SimData, 'ori');
+    % u_baseline = [abs(SimData.p_AC) ~= 1e-4; abs(SimData.p_EV) ~= 1e-4];
     Metrics_ori = calculate_solution_metrics(u_baseline, SimData, 'ori');
 
-    %% 2.4 执行逐时贪心优化
-    fprintf('开始为 %s 调节进行逐时贪心优化 (共 %d 步)...\n', ...
-            output_direction, SimData.T);
-    u_optimal = zeros(SimData.N_total, SimData.T, 'logical'); 
-    total_cost = 0;
-    p_total_optimal = zeros(1, SimData.T); 
+    % --- 2.4 逐时贪心优化 ---
+    fprintf('正在执行 %d 步逐时优化...\n', SimData.T);
+    u_opt = false(SimData.N_total, SimData.T);
+    p_opt_t = zeros(1, SimData.T);
+    cost_total = 0;
 
-    p_all_devices = [SimData.p_AC; SimData.p_EV];         
-    c_all_devices = [OptInputs.DeviceCosts.c_AC; ...
-                     OptInputs.DeviceCosts.c_EV];         
-    device_nodes = OptInputs.Network.DeviceNodes;         
-
-    % *** 为多目标启发式准备额外参数 ***
-    % 1. 设备类型标识 (1=AC, 2=EV)
-    device_types = [ones(SimData.nAC, 1); 2*ones(SimData.nEV, 1)];
-    % 2. 聚合潜力曲线 (1 x T)
-    P_AC_agg_total_t = sum(SimData.p_AC, 1);
-    P_EV_agg_total_t = sum(SimData.p_EV, 1);
-    % 3. 避免除零
-    P_Total_agg_t = P_AC_agg_total_t + P_EV_agg_total_t;
-    P_Total_agg_t(P_Total_agg_t == 0) = 1; % 避免0/0
-    % 4. 计算AC资源占比 (1 x T)
-    Ratio_AC_t = P_AC_agg_total_t ./ P_Total_agg_t;
-    % *** 结束准备 ***
-    
     parfor t = 1:SimData.T
-        p_t = p_all_devices(:, t);
-        P_req_t = OptInputs.P_req(t);
-        Network_t = struct(...
-            'PTDF', OptInputs.Network.PTDF, ...
-            'LineLimits', OptInputs.Network.LineLimits, ...
-            'BaseFlow', OptInputs.Network.BaseFlow(:, t), ...
-            'DeviceNodes', device_nodes ...
-        );
+        Network_t = OptIn.Network; 
+        Network_t.BaseFlow = OptIn.Network.BaseFlow(:, t);
         
-        % *** 修改：调用新的多目标求解器 ***
-        [u_opt_t, P_total_t, cost_t, is_feasible] = ...
-            solve_times_step_greedy_multi_obj(...
-                p_t, c_all_devices, P_req_t, Network_t, ...
-                W_cost, W_complementarity, Ratio_AC_t(t), device_types ...
-            );
-        % *** 结束修改 ***
+        [u_t, p_t, c_t, ~] = solve_times_step_greedy_multi_obj(...
+            p_all(:,t), c_all, OptIn.P_req(t), Network_t, ...
+            W_cost, W_complementarity, Ratio_AC_t(t), dev_types);
             
-        if ~is_feasible
-            fprintf('警告 [%s]: 时间步 %d 无法满足需求 P_req=%.2f. 仅提供了 %.2f\n', ...
-                    output_direction, t, P_req_t, P_total_t);
-        end
-        
-        u_optimal(:, t) = u_opt_t;
-        p_total_optimal(t) = P_total_t;
-        total_cost = total_cost + cost_t;
+        u_opt(:,t) = u_t;
+        p_opt_t(t) = p_t;
+        cost_total = cost_total + c_t;
     end
+    fprintf('优化完成。总成本: %.2f\n', cost_total);
 
-    fprintf('[%s] 贪心优化完成。总调节成本: %.2f\n', output_direction, total_cost);
+    % --- [保留] 2.5 计算优化后互补性指标 (Opt) ---
+    fprintf('正在计算 %s 优化后 (Opt) 互补性指标...\n', this_dir);
+    Metrics_opt = calculate_solution_metrics(u_opt, SimData, 'opt');
 
-    %% 2.5 计算优化后互补性指标 (Opt)
-    fprintf('正在计算 %s 优化后 (Opt) 互补性指标...\n', output_direction);
-    Metrics_opt = calculate_solution_metrics(u_optimal, SimData, 'opt');
+    % --- [保留] 2.6 结果对比报告 ---
+    fprintf('\n--- [%s] 互补性指标对比 (目标: Opt < Ori) ---\n', this_dir);
+    fprintf('SDCI: Ori=%.4f -> Opt=%.4f\n', Metrics_ori.SDCI, Metrics_opt.SDCI);
+    fprintf('Rho:  Ori=%.4f -> Opt=%.4f\n', Metrics_ori.Rho, Metrics_opt.Rho);
 
-    %% 2.6 结果对比与报告
-    fprintf('\n================ [%s] 优化结果报告 ================\n', output_direction);
-    fprintf('优化权重: Cost=%.2f, Complementarity=%.2f\n', W_cost, W_complementarity);
-    fprintf('目标: 最小化总成本: %.2f (元)\n', total_cost);
-    fprintf('约束 1 (满足需求): 见逐时警告。\n');
-    fprintf('约束 4 (网络潮流): 在贪心算法中已严格执行。\n');
-    fprintf('\n--- 互补性指标对比 (目标: Opt < Ori) ---\n');
-    fprintf('约束 2 (SDCI): \n');
-    fprintf('  - SDCI_ori: %.4f (基准)\n', Metrics_ori.SDCI);
-    fprintf('  - SDCI_opt: %.4f (优化后)\n', Metrics_opt.SDCI);
-    if Metrics_opt.SDCI < Metrics_ori.SDCI
-        fprintf('  -> 结果: 成功改善 (%.4f < %.4f)\n', Metrics_opt.SDCI, Metrics_ori.SDCI);
-    else
-        fprintf('  -> 结果: 未改善 (%.4f >= %.4f)\n', Metrics_opt.SDCI, Metrics_ori.SDCI);
-    end
-
-    fprintf('\n约束 3 (Spearman Rho): \n');
-    fprintf('  - Rho_ori: %.4f (基准)\n', Metrics_ori.Rho);
-    fprintf('  - Rho_opt: %.4f (优化后)\n', Metrics_opt.Rho);
-    if abs(Metrics_opt.Rho) < abs(Metrics_ori.Rho)
-        fprintf('  -> 结果: 成功改善 (|%.4f| < |%.4f|)\n', Metrics_opt.Rho, Metrics_ori.Rho);
-    else
-        fprintf('  -> 结果: 未改善 (|%.4f| >= |%.4f|)\n', Metrics_opt.Rho, Metrics_ori.Rho);
-    end
-    fprintf('=======================================================\n');
-
-    %% 2.7 绘制结果对比图
-    fprintf('正在为 %s 调节生成优化结果对比图...\n', output_direction);
-
-    try
-        time_axis = 1:SimData.T;
-        P_ori_total = Metrics_ori.P_AC_agg + Metrics_ori.P_EV_agg; 
-        P_opt_total = p_total_optimal'; 
-        P_demand = OptInputs.P_req'; 
-
-        figure('Name', sprintf('VPP Optimization Results (%s, W_comp=%.1f)', output_direction, W_complementarity), ...
-               'Position', [100 100 1200 600]);
+    % --- [保留] 2.7 结果可视化 ---
+    if ~isdeployed
+        figure('Name', ['Optimization Results - ', this_dir], 'Color', 'w', 'Position', [100,100,800,400]);
+        plot(1:SimData.T, OptIn.P_req, 'k--', 'LineWidth', 2, 'DisplayName', '电网需求');
         hold on;
+        plot(1:SimData.T, p_opt_t, 'r-', 'LineWidth', 1.5, 'DisplayName', '优化调度出力');
+        % 绘制总潜力作为参考 (使用直接加载的聚合数据)
+        plot(1:SimData.T, SimData.P_AC_agg_loaded + SimData.P_EV_agg_loaded, ...
+             'Color', [0.7 0.7 0.7], 'DisplayName', '系统总潜力');
         
-        plot(time_axis, P_ori_total, 'r--', 'LineWidth', 2, 'DisplayName', '基准总潜力 (Ori)');
-        plot(time_axis, P_opt_total, 'b-', 'LineWidth', 2, 'DisplayName', '优化后调度 (Opt)');
-        plot(time_axis, P_demand, 'k:', 'LineWidth', 2.5, 'DisplayName', '电网需求 (P_{req})');
-        
-        xlabel('时间步 (Time Step)');
-        ylabel(sprintf('VPP %s 调节功率 (kW)', output_direction));
-        title_str = sprintf('VPP 优化调度 (%s, W_{cost}=%.1f, W_{comp}=%.1f) vs 需求', ...
-                            output_direction, W_cost, W_complementarity);
-        title(title_str);
-        legend('show', 'Location', 'best');
-        grid on;
-        hold off;
-        
-        output_plot_filename = sprintf('vpp_optimization_results_%s_Wcomp_%.1f.png', ...
-                                       output_direction, W_complementarity);
-        saveas(gcf, output_plot_filename);
-        fprintf('结果图已保存为: %s\n', output_plot_filename);
-        
-    catch ME_plot
-        fprintf('*** 绘制 [%s] 结果图时出错: %s ***\n', output_direction, ME_plot.message);
+        legend('Location', 'bestoutside'); grid on;
+        xlabel('时间步'); ylabel('功率 (kW)');
+        title(sprintf('%s 方向调节优化结果 (W_{cost}=%.1f, W_{comp}=%.1f)', this_dir, W_cost, W_complementarity));
     end
+end
 
-end % 结束调节方向主循环
-
-fprintf('\n所有调节方向处理完毕。\n');
 toc;
+fprintf('\n全部完成。\n');
