@@ -160,6 +160,121 @@ disp(node_results);
 fprintf('======================================================\n');
 
 
+%% --- 步骤 6: 多模型节点级预测对比 (集成随机森林) ---
+fprintf('\n--- 步骤 6: 使用多种新模型进行节点级对比预测 ---\n');
+
+% --- 6.0 准备历史数据和预测时间轴 ---
+% AC 历史 (2018-2022)
+ac_hist_node = params_ac_province.N_hist * node_ac_allocation_factor;
+ac_hist_years = params_ac_province.hist_years;
+years_to_predict_ac = predict_end_year - ac_hist_years(end);
+future_years_axis_ac = (ac_hist_years(end)+1) : predict_end_year;
+
+% EV 历史 (估算 2019-2023)
+if ~isfield(params_ev_province, 'N_hist')
+    ev_hist_prov_estimated = [0.5e6, 0.7e6, 0.95e6, 1.2e6, params_ev_province.N0]; 
+    ev_hist_years = (params_ev_province.start_year - length(ev_hist_prov_estimated) + 1) : params_ev_province.start_year;
+else
+    ev_hist_prov_estimated = params_ev_province.N_hist;
+    ev_hist_years = (params_ev_province.start_year - length(ev_hist_prov_estimated)) : (params_ev_province.start_year - 1);
+end
+ev_hist_node = ev_hist_prov_estimated * node_ev_allocation_factor;
+years_to_predict_ev = predict_end_year - ev_hist_years(end);
+future_years_axis_ev = (ev_hist_years(end)+1) : predict_end_year;
+
+
+fprintf('节点级历史数据 (估算):\n');
+fprintf('  AC (万台, %d-%d): %s\n', ac_hist_years(1), ac_hist_years(end), num2str(round(ac_hist_node/1e4, 2)));
+fprintf('  EV (万辆, %d-%d): %s\n', ev_hist_years(1), ev_hist_years(end), num2str(round(ev_hist_node/1e4, 2)));
+
+% --- 6.1 应用灰色预测 GM(1,1) ---
+fprintf('  > 正在执行灰色预测 GM(1,1)...\n');
+ac_pred_grey = grey_prediction_gm11(ac_hist_node, years_to_predict_ac);
+ev_pred_grey = grey_prediction_gm11(ev_hist_node, years_to_predict_ev);
+
+% --- 6.2 应用 ARIMA 模型 ---
+fprintf('  > 正在执行 ARIMA 预测...\n');
+ac_pred_arima = arima_prediction(ac_hist_node, years_to_predict_ac, [1, 1, 0]);
+ev_pred_arima = arima_prediction(ev_hist_node, years_to_predict_ev, [1, 2, 0]); 
+
+% --- 6.3 应用动态 Gompertz 模型 ---
+fprintf('  > 正在执行动态 Gompertz 预测...\n');
+K_ac_dynamic = linspace(ac_hist_node(end)*1.5, ac_hist_node(end)*2.5, length(ac_hist_node) + years_to_predict_ac);
+ac_pred_gompertz = gompertz_dynamic_prediction(ac_hist_node, years_to_predict_ac, K_ac_dynamic);
+K_ev_dynamic = linspace(ev_hist_node(end)*5, ev_hist_node(end)*15, length(ev_hist_node) + years_to_predict_ev);
+ev_pred_gompertz = gompertz_dynamic_prediction(ev_hist_node, years_to_predict_ev, K_ev_dynamic);
+
+% --- 6.4 [修改] 应用自回归随机森林 (Random Forest Autoregressive) ---
+fprintf('  > 正在执行自回归随机森林预测 (算例)...\n');
+% 为算例创建与多元回归兼容的(虚拟)影响因子
+% AC (历史: 2018-2022, 预测: 2023-2040)
+n_hist_ac = length(ac_hist_node);
+n_pred_ac = years_to_predict_ac; % 2040-2022 = 18
+% 历史特征需要与N_hist对齐 (5个点)
+X_hist_ac = [linspace(8, 12, n_hist_ac)', [0; 0; 1; 1; 2]]; % 假设收入+政策 (5x2)
+% 未来特征需要与预测年份对齐 (18个点)
+X_pred_ac = [linspace(12.5, 25, n_pred_ac)', [repmat(2, 7, 1); repmat(3, n_pred_ac-7, 1)]]; % (18x2)
+ac_pred_rf_ar = random_forest_prediction(ac_hist_node, X_hist_ac, X_pred_ac, 50); % 50 棵树
+
+% EV (历史: 2019-2023, 预测: 2024-2040)
+n_hist_ev = length(ev_hist_node);
+n_pred_ev = years_to_predict_ev; % 2040-2023 = 17
+% 历史特征 (5x2)
+X_hist_ev = [linspace(9, 13, n_hist_ev)', [100; 150; 250; 400; 600]]; % 假设收入+充电桩
+% 未来特征 (17x2)
+X_pred_ev = [linspace(13.5, 25, n_pred_ev)', round(linspace(800, 5000, n_pred_ev))'];
+ev_pred_rf_ar = random_forest_prediction(ev_hist_node, X_hist_ev, X_pred_ev, 50);
+
+% --- 6.5 汇总对比结果 (提取目标年份 2030, 2035, 2040) ---
+res_compare_ac = table(target_years', 'VariableNames', {'Year'});
+res_compare_ev = table(target_years', 'VariableNames', {'Year'});
+
+% 提取目标年份索引
+[~, idx_target_ac] = ismember(target_years, future_years_axis_ac);
+[~, idx_target_ev] = ismember(target_years, future_years_axis_ev);
+
+% 填充 AC 对比表 (单位: 万台)
+res_compare_ac.Base_High     = round(ac_high_node_target'/1e4, 1);
+if ~all(isnan(ac_pred_grey)); res_compare_ac.Grey_GM11 = round(ac_pred_grey(idx_target_ac)'/1e4, 1); else; res_compare_ac.Grey_GM11 = NaN; end
+if ~all(isnan(ac_pred_arima)); res_compare_ac.ARIMA = round(ac_pred_arima(idx_target_ac)'/1e4, 1); else; res_compare_ac.ARIMA = NaN; end
+if ~all(isnan(ac_pred_gompertz)); res_compare_ac.Gompertz = round(ac_pred_gompertz(idx_target_ac)'/1e4, 1); else; res_compare_ac.Gompertz = NaN; end
+if ~all(isnan(ac_pred_rf_ar)); res_compare_ac.RandForest_AR = round(ac_pred_rf_ar(idx_target_ac)/1e4, 1); else; res_compare_ac.RandForest_AR = NaN; end % 修正
+
+% 填充 EV 对比表 (单位: 万辆)
+res_compare_ev.Base_High     = round(ev_high_node_target'/1e4, 1);
+if ~all(isnan(ev_pred_grey)); res_compare_ev.Grey_GM11 = round(ev_pred_grey(idx_target_ev)'/1e4, 1); else; res_compare_ev.Grey_GM11 = NaN; end
+if ~all(isnan(ev_pred_arima)); res_compare_ev.ARIMA = round(ev_pred_arima(idx_target_ev)'/1e4, 1); else; res_compare_ev.ARIMA = NaN; end
+if ~all(isnan(ev_pred_gompertz)); res_compare_ev.Gompertz = round(ev_pred_gompertz(idx_target_ev)'/1e4, 1); else; res_compare_ev.Gompertz = NaN; end
+if ~all(isnan(ev_pred_rf_ar)); res_compare_ev.RandForest_AR = round(ev_pred_rf_ar(idx_target_ev)/1e4, 1); else; res_compare_ev.RandForest_AR = NaN; end % 修正
+
+fprintf('\n=== 节点级 AC 规模多模型预测对比 (单位: 万台) ===\n');
+disp(res_compare_ac);
+fprintf('\n=== 节点级 EV 规模多模型预测对比 (单位: 万辆) ===\n');
+disp(res_compare_ev);
+
+% 绘图对比
+figure('Name', '多模型节点级预测对比', 'Color', 'w', 'Position', [100, 100, 1000, 400]);
+subplot(1,2,1); hold on; title('节点 AC 预测对比');
+plot(target_years, res_compare_ac.Base_High, 'k-o', 'LineWidth', 2, 'DisplayName', '原方法(High)');
+plot(target_years, res_compare_ac.Grey_GM11, 'b--s', 'LineWidth', 1.5, 'DisplayName', 'GM(1,1)');
+plot(target_years, res_compare_ac.ARIMA, 'g-.^', 'LineWidth', 1.5, 'DisplayName', 'ARIMA');
+plot(target_years, res_compare_ac.Gompertz, 'm:x', 'LineWidth', 2, 'DisplayName', 'Dyn-Gompertz');
+plot(target_years, res_compare_ac.RandForest_AR, 'c-d', 'LineWidth', 1.5, 'DisplayName', 'RF(自回归)'); % 修改
+legend('Location', 'best'); xlabel('年份'); ylabel('万台'); grid on; xlim([target_years(1)-2, target_years(end)+2]);
+
+subplot(1,2,2); hold on; title('节点 EV 预测对比');
+plot(target_years, res_compare_ev.Base_High, 'k-o', 'LineWidth', 2, 'DisplayName', '原方法(High)');
+plot(target_years, res_compare_ev.Grey_GM11, 'b--s', 'LineWidth', 1.5, 'DisplayName', 'GM(1,1)');
+plot(target_years, res_compare_ev.ARIMA, 'g-.^', 'LineWidth', 1.5, 'DisplayName', 'ARIMA');
+plot(target_years, res_compare_ev.Gompertz, 'm:x', 'LineWidth', 2, 'DisplayName', 'Dyn-Gompertz');
+plot(target_years, res_compare_ev.RandForest_AR, 'c-d', 'LineWidth', 1.5, 'DisplayName', 'RF(自回归)'); % 修改
+legend('Location', 'best'); xlabel('年份'); ylabel('万辆'); grid on; xlim([target_years(1)-2, target_years(end)+2]);
+
+fprintf('\n新增模型算例执行完毕。\n');
+% --- 结束新增步骤 ---
+
+
+
 %% --- 5. 绘制 "Nature" 风格【省级】和【节点级】预测曲线 (中文/放大/分图/无标题/高DPI版) ---
 % (*** 此部分已按您的最新要求修改 ***)
 
@@ -308,93 +423,3 @@ fprintf('--- 绘图完成 ---\n');
 % 恢复默认字体（可选，良好实践）
 set(0, 'DefaultAxesFontName', 'default');
 set(0, 'DefaultTextFontName', 'default');
-
-%% --- [新增] 步骤 6: 多模型节点级预测对比 ---
-fprintf('\n--- 步骤 6: 使用多种新模型进行节点级对比预测 ---\n');
-
-% 准备节点级历史数据 (基于步骤3中计算的 ac_hist_node 和假设的 ev_hist_node)
-% 注意: 原脚本中 params_ev_province 没有直接包含历史数据 N_hist 字段。
-% 如果不存在，我们需自行构造一个简单的历史趋势用于演示新模型。
-if ~isfield(params_ev_province, 'N_hist')
-    % 简易构造省级 EV 历史 (2019-2023)，仅供演示新模型输入
-    % 假设 2023 年初为 N0 (150万)，往前倒推
-    ev_hist_prov_estimated = [0.5e6, 0.7e6, 0.95e6, 1.2e6, params_ev_province.N0]; 
-else
-    ev_hist_prov_estimated = params_ev_province.N_hist;
-end
-ev_hist_node = ev_hist_prov_estimated * node_ev_allocation_factor;
-
-% 定义预测年数
-% 我们预测到 predict_end_year (2040年)，从 2024 年开始
-years_to_predict = predict_end_year - 2023; 
-future_years_axis = 2024 : predict_end_year;
-
-fprintf('节点级历史数据 (估算, 2023及之前):\n');
-fprintf('  AC (万台): %s\n', num2str(round(ac_hist_node/1e4, 2)));
-fprintf('  EV (万辆): %s\n', num2str(round(ev_hist_node/1e4, 2)));
-
-% --- 6.1 应用灰色预测 GM(1,1) ---
-fprintf('  > 正在执行灰色预测 GM(1,1)...\n');
-ac_pred_grey = grey_prediction_gm11(ac_hist_node, years_to_predict);
-ev_pred_grey = grey_prediction_gm11(ev_hist_node, years_to_predict);
-
-% --- 6.2 应用 ARIMA 模型 ---
-fprintf('  > 正在执行 ARIMA 预测...\n');
-% 使用简单 (1,1,0) 阶数演示，实际应调参
-ac_pred_arima = arima_prediction(ac_hist_node, years_to_predict, [1, 1, 0]);
-% EV增长快，可能需要二阶差分 [1, 2, 0]
-ev_pred_arima = arima_prediction(ev_hist_node, years_to_predict, [1, 2, 0]); 
-
-% --- 6.3 应用动态 Gompertz 模型 ---
-fprintf('  > 正在执行动态 Gompertz 预测...\n');
-% 设定动态饱和水平 K(t): 假设未来受政策和经济影响，天花板缓慢提升
-% AC: 假设节点饱和从 1.5倍当前量 增长到 2.0倍
-K_ac_dynamic = linspace(ac_hist_node(end)*1.5, ac_hist_node(end)*2.5, length(ac_hist_node) + years_to_predict);
-ac_pred_gompertz = gompertz_dynamic_prediction(ac_hist_node, years_to_predict, K_ac_dynamic);
-
-% EV: 假设节点饱和从 5倍当前量 快速增长到 15倍 (市场初期天花板提升快)
-K_ev_dynamic = linspace(ev_hist_node(end)*5, ev_hist_node(end)*15, length(ev_hist_node) + years_to_predict);
-ev_pred_gompertz = gompertz_dynamic_prediction(ev_hist_node, years_to_predict, K_ev_dynamic);
-
-% --- 6.4 汇总对比结果 (提取目标年份 2030, 2035, 2040) ---
-res_compare_ac = table(target_years', 'VariableNames', {'Year'});
-res_compare_ev = table(target_years', 'VariableNames', {'Year'});
-
-% 提取目标年份索引
-[~, idx_target] = ismember(target_years, future_years_axis);
-
-% 填充 AC 对比表 (单位: 万台)
-res_compare_ac.Base_High = round(ac_high_node_target'/1e4, 1); % 原有方法的 High 情景
-res_compare_ac.Grey_GM11 = round(ac_pred_grey(idx_target)'/1e4, 1);
-res_compare_ac.ARIMA     = round(ac_pred_arima(idx_target)'/1e4, 1);
-res_compare_ac.Gompertz  = round(ac_pred_gompertz(idx_target)'/1e4, 1);
-
-% 填充 EV 对比表 (单位: 万辆)
-res_compare_ev.Base_High = round(ev_high_node_target'/1e4, 1); % 原有方法的 High 情景
-res_compare_ev.Grey_GM11 = round(ev_pred_grey(idx_target)'/1e4, 1);
-res_compare_ev.ARIMA     = round(ev_pred_arima(idx_target)'/1e4, 1);
-res_compare_ev.Gompertz  = round(ev_pred_gompertz(idx_target)'/1e4, 1);
-
-fprintf('\n=== 节点级 AC 规模多模型预测对比 (单位: 万台) ===\n');
-disp(res_compare_ac);
-
-fprintf('\n=== 节点级 EV 规模多模型预测对比 (单位: 万辆) ===\n');
-disp(res_compare_ev);
-
-% (可选) 简单的绘图对比
-figure('Name', '多模型节点级预测对比', 'Color', 'w', 'Position', [100, 100, 1000, 400]);
-subplot(1,2,1); hold on; title('节点 AC 预测对比');
-plot(target_years, res_compare_ac.Base_High, 'k-o', 'LineWidth', 2, 'DisplayName', '原方法(High)');
-plot(target_years, res_compare_ac.Grey_GM11, 'b--s', 'LineWidth', 1.5, 'DisplayName', 'GM(1,1)');
-plot(target_years, res_compare_ac.ARIMA, 'g-.^', 'LineWidth', 1.5, 'DisplayName', 'ARIMA');
-plot(target_years, res_compare_ac.Gompertz, 'm:x', 'LineWidth', 2, 'DisplayName', 'Dyn-Gompertz');
-legend('Location', 'best'); xlabel('年份'); ylabel('万台'); grid on;
-
-subplot(1,2,2); hold on; title('节点 EV 预测对比');
-plot(target_years, res_compare_ev.Base_High, 'k-o', 'LineWidth', 2, 'DisplayName', '原方法(High)');
-plot(target_years, res_compare_ev.Grey_GM11, 'b--s', 'LineWidth', 1.5, 'DisplayName', 'GM(1,1)');
-plot(target_years, res_compare_ev.ARIMA, 'g-.^', 'LineWidth', 1.5, 'DisplayName', 'ARIMA');
-plot(target_years, res_compare_ev.Gompertz, 'm:x', 'LineWidth', 2, 'DisplayName', 'Dyn-Gompertz');
-legend('Location', 'best'); xlabel('年份'); ylabel('万辆'); grid on;
-
-fprintf('\n所有预测任务完成。\n');
