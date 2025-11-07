@@ -1,15 +1,10 @@
-%% 仅 AC 状态更新的仿真程序 (基于 ac_ev_simulation_block.m 和 updateACSOC_single)
-%
-% 这是一个主程序脚本 (Script)，不是函数。
-% 您可以直接运行此文件。
-%
-% *** 版本 2: 响应电网指令 ***
-% 1. 移除了所有 EV (电动汽车) 相关代码。
-% 2. 实现了 AC (空调) 的 "状态化" (Stateful) 仿真。
-% 3. 【新】调用 generate_hourly_regulation_signal 生成小时级电网指令。
-% 4. 【新】使用 updateACSOC_single 函数根据分解后的电网指令更新 SOC 状态。
-% 5. 【修正】修正了上一版本中 ac_ev_simulation_block.m 的文件读取逻辑错误。
-% 6. 保留了原始的分块加载和分块保存逻辑。
+
+% 脚本功能:
+% 1. 仅执行空调 (AC) 仿真，移除了所有电动汽车 (EV) 相关的代码。
+% 2. 实现 AC 的 "状态化" (Stateful) 仿真，即 SOC 在时间步之间传递。
+% 3. 调用 generate_hourly_regulation_signal 生成小时级变化的模拟电网指令。
+% 4. 使用 updateACSOC_single 函数根据分解后的电网指令更新 SOC 状态。
+% 5. 采用分块 (Chunk) 加载和保存机制，以处理大规模设备数据。
 
 clear; close all; clc;
 
@@ -18,34 +13,34 @@ tic; % 启动一个总计时器
 %% 1. 系统初始化 (全局参数)
 rng(2023);                                      % 固定随机种子，保证结果可重复
 T_total = 24;                                   % 总时长（小时）
-dt = 0.05;                                      % 时间分辨率（小时）
+dt = 0.05;                                      % 时间分辨率（小时）(例如 5/60)
 time_points = 0:dt:T_total;                     % 生成时间序列
-T_steps_total = length(time_points);            % 【新增】总时间步数
-steps_per_hour = round(1/dt);                 % 【新增】每小时步数
-num_hours = floor(T_steps_total / steps_per_hour); % 【新增】总小时数
+T_steps_total = length(time_points);            % 仿真总时间步数
+steps_per_hour = round(1/dt);                 % 每小时的时间步数
+num_hours = floor(T_steps_total / steps_per_hour); % 总小时数
 
 base_price = 30;                                % 基础电价（元/kWh）
 t_adj = 1;                                      % 调节时长（小时）(用于潜力计算)
 
 %% 1.5. 模块运行控制
 runAC = true;  % <--- 仅运行 AC 仿真
-runEV = false; % <--- 禁用 EV 仿真
+runEV = false; % <--- 禁用 EV 仿真 (在此脚本中固定为 false)
 
 %% 1.6. 分块范围控制
-% --- 请在这里配置您想运行的分块范围 ---
+% --- 在此处配置您想运行的分块范围 ---
 startChunk = 1;    % <--- 设置起始块编号 (例如: 1)
 endChunk = inf;    % <--- 设置结束块编号 (例如: inf 可运行到文件末尾)
 % ---------------------------------
 
 %% 2. 初始化参数 (全局参数)
-acFile = 'AC_template1.xlsx';                   % (AC 数据文件)
-outputDir = 'chunk_results_ac_only_responsive'; % *** 新增：用于存储 AC 响应结果的文件夹 ***
+acFile = 'AC_template1.xlsx';                   % AC 数据文件
+outputDir = 'chunk_results_ac_only_responsive'; % 用于存储 AC 响应结果的文件夹
 if ~exist(outputDir, 'dir')
     mkdir(outputDir);
 end
              
 %% 3. 主分块循环
-chunkSize = 10000;  % 每次处理1000台设备
+chunkSize = 10000;  % 每次处理的设备数量
 chunkIndex = startChunk;   
 
 while true
@@ -67,15 +62,15 @@ while true
     ACs = []; % 初始化为空
     
     try
+        % 设置导入选项以读取特定行
         acOpts = detectImportOptions(acFile, 'ReadVariableNames', true);
         acOpts.DataRange = dataRange; % 指定读取范围
         acTable = readtable(acFile, acOpts);
         
         if ~isempty(acTable)
-            % 【!!! 修正 !!!】
-            % 正确的逻辑：使用 table2struct 将已读取的数据块转换为结构体
-            % 错误：ACs = initializeACsFromExcel(acTable);
-            ACs = table2struct(acTable); %
+            % 【修正】: 直接将读取的 table 转换为 struct
+            % 这是 ac_ev_simulation_block.m 中的正确逻辑
+            ACs = table2struct(acTable); 
         end
         
     catch ME
@@ -83,6 +78,7 @@ while true
         ACs = []; 
     end
 
+    % 如果读取到的数据为空，则退出循环
     if isempty(ACs)
         fprintf('未在 %s 中找到更多AC数据 (已到达文件末尾或范围 %s 无数据)，处理结束。\n', acFile, dataRange);
         break; % 退出 while 循环
@@ -99,12 +95,15 @@ while true
 
     temp_ACs = ACs; 
     parfor i = 1:num_AC
+        % 计算参与概率
         participation = calculateParticipation(temp_ACs(i).p_incentive, base_price);
+        % 计算温度灵活性
         [~, ~, deltaT] = incentiveTempAC(...        
             temp_ACs(i).p_incentive, p_min, p_max, p_min_prime, p_max_prime, T_set_max);
         
         temp_ACs(i).ptcp = (rand() < participation);     
         
+        % 根据参与意愿调整温度上下限
         if temp_ACs(i).ptcp
             temp_ACs(i).Tmax = temp_ACs(i).Tset + deltaT;
             temp_ACs(i).Tmin = temp_ACs(i).Tset - deltaT;
@@ -113,6 +112,7 @@ while true
              temp_ACs(i).Tmin = temp_ACs(i).Tset; 
         end
         
+        % 生成环境温度曲线 (T_ja)
         base_temp = temp_ACs(i).Tset + 4*sin(2*pi*time_points/24); 
         temp_range = temp_ACs(i).Tmax - temp_ACs(i).Tmin;
         if abs(temp_range) < 1e-6; temp_range = 0.1; end % 避免范围为0
@@ -120,17 +120,20 @@ while true
         noise = 0.2 * temp_range * randn(size(time_points));
         
         if temp_ACs(i).ptcp
+            % 参与的AC，其T_ja被限制在新的[Tmin, Tmax]内
             temp_ACs(i).T_ja = min(max(base_temp + noise, temp_ACs(i).Tmin), temp_ACs(i).Tmax);
         else
+            % 未参与的AC，T_ja仅基于室外温度波动
             temp_ACs(i).T_ja = base_temp + noise; 
         end
     end
-    ACs = temp_ACs;
+    ACs = temp_ACs; % 将并行计算的结果写回主结构体
 
     %% 5. 预计算模块 (仅 AC)
-    fprintf('分块 %d: 正在预计算 AC 参数...\n', chunkIndex);
+    fprintf('分块 %d: 正在预计算 AC 参数 (Alpha, Beta, Gamma)...\n', chunkIndex);
     temp_ACs = ACs; 
     parfor i = 1:num_AC
+        % 计算理论模型 (3-12) 中的状态转移系数
         [alpha, beta, gamma] = calculateACABC_single(...
             temp_ACs(i).R, temp_ACs(i).C, temp_ACs(i).eta,...
             temp_ACs(i).Tmax, temp_ACs(i).Tmin, temp_ACs(i).Tset, dt);
@@ -140,8 +143,9 @@ while true
     end
     ACs = temp_ACs;
     
-    %% 5.5. 【新增】生成电网调节指令
+    %% 5.5. 生成电网调节指令
     fprintf('分块 %d: 正在生成 %d 小时的电网调节指令...\n', chunkIndex, num_hours);
+    % 调用新函数生成小时级指令
     P_grid_command_series = generate_hourly_regulation_signal(T_steps_total, steps_per_hour, num_hours, num_AC);
     
     % 计算参与的 AC 总数 (用于分解指令)
@@ -157,7 +161,8 @@ while true
     AC_Up_Individual = zeros(num_AC, length(time_points));
     AC_Down_Individual = zeros(num_AC, length(time_points));
     
-    % *** 初始化当前状态向量 (即 SOC(t=0)) ***
+    % 初始化当前状态向量 (即 SOC(t=0))
+    % 我们使用从Excel加载的初始SOC值
     CURRENT_SOC_AC = [ACs.SOC]'; % [num_AC x 1] 向量
 
     %% 6.2 时间步进循环
@@ -171,10 +176,10 @@ while true
                  chunkIndex, t, 100*t_idx/T_steps_total);
         end
         
-        % --- 【新增】获取当前时间步的电网总指令 ---
+        % 获取当前时间步的电网总指令
         P_grid_command_t = P_grid_command_series(t_idx);
         
-        % --- 【新增】分解指令到每个参与的设备 (平均分解) ---
+        % 分解指令到每个参与的设备 (平均分解)
         if num_AC_participating > 0
             Delta_Pj_command_t_step = P_grid_command_t / num_AC_participating;
         else
@@ -187,7 +192,7 @@ while true
         
         % 临时存储下一时间步的状态
         temp_SOC_AC_for_next_step = zeros(num_AC, 1);
-        % 临时存储当前时间步的个体结果
+        % 临时存储当前时间步的个体结果 (用于保存)
         temp_AC_Up_Ind = zeros(num_AC, 1);
         temp_AC_Down_Ind = zeros(num_AC, 1);
         temp_SOC_AC_for_saving = zeros(num_AC, 1);
@@ -202,6 +207,7 @@ while true
                 % 2. 计算当前时间 t 的基线和潜力 (基于 SOC(t))
                 P_base_i = ACbaseP_single(ACs(i).T_ja(t_idx), ACs(i).Tset, ACs(i).R, ACs(i).eta);
                 
+                % 计算潜力
                 [DeltaP_plus, DeltaP_minus] = calculateACAdjustmentPotentia(...
                     P_base_i, 2*abs(P_base_i), 0,...
                     ACs(i).alpha, ACs(i).beta, ACs(i).gamma,...
@@ -215,7 +221,7 @@ while true
                 temp_AC_Up_Ind(i) = DeltaP_plus;
                 temp_AC_Down_Ind(i) = DeltaP_minus;
                 
-                % 3. *** 【修改】应用新函数和分解后的指令更新状态 ***
+                % 3. 应用新函数和分解后的指令更新状态
                 % 仅参与的 AC 接收指令
                 Delta_Pj_command = Delta_Pj_command_t_step;
                 
@@ -226,19 +232,21 @@ while true
                     Delta_Pj_command = DeltaP_minus;
                 end
                 
+                % 根据指令计算 SOC(t+1)
                 SOC_next_i = updateACSOC_single(SOC_current_i, Delta_Pj_command, ...
                     ACs(i).alpha, ACs(i).beta, ACs(i).gamma);
                 
                 temp_SOC_AC_for_next_step(i) = SOC_next_i; % 存储 SOC(t+1)
             
             else % 如果不参与 (ptcp == false)
+                
                 % 不参与的设备按基线运行 (Delta_Pj = 0)
                 SOC_next_i = updateACSOC_single(SOC_current_i, 0, ...
                     ACs(i).alpha, ACs(i).beta, ACs(i).gamma);
                 
-                temp_AC_Up_Ind(i) = 0;
-                temp_AC_Down_Ind(i) = 0;
-                temp_SOC_AC_for_next_step(i) = SOC_next_i; % 状态仍然更新
+                temp_AC_Up_Ind(i) = 0;   % 无潜力
+                temp_AC_Down_Ind(i) = 0; % 无潜力
+                temp_SOC_AC_for_next_step(i) = SOC_next_i; % 状态仍然按基线更新
             end
         end % 结束 parfor AC
         
@@ -265,8 +273,7 @@ while true
     results.SOC_AC = SOC_AC;
     results.AC_Up_Individual = AC_Up_Individual;
     results.AC_Down_Individual = AC_Down_Individual;
-    % (可选) 保存电网指令
-    results.P_grid_command_series = P_grid_command_series; 
+    results.P_grid_command_series = P_grid_command_series; % 保存电网指令
     
     %% 8. 保存当前分块的结果
     outputFileName = fullfile(outputDir, sprintf('results_chunk_ac_%d.mat', chunkIndex));
@@ -284,9 +291,10 @@ while true
         end
     end
     
-    %% 9. 为下一次循环做准备
+    %% 9. 为下一次循环做准备 (动态清理)
     chunkIndex = chunkIndex + 1; % 移动到下一个分块
     
+    % 清理本次循环的大型变量以释放内存
     clear results num_AC ...
           temp_ACs acTable acOpts ...
           AC_Up AC_Down SOC_AC AC_Up_Individual AC_Down_Individual ...
