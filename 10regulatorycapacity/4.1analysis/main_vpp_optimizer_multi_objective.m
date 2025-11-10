@@ -1,19 +1,37 @@
-% main_vpp_optimizer_multi_objective.m
-% 解决VPP大规模调度优化问题的主脚本 (v6 - 多目标 + 聚合数据读取 + 保留完整分析)
+
 clear; close all; clc;
 tic;
 
+plot_data_filename = 'multi_obj_plot_data3.mat'; 
+
 %% 1. 全局配置
 chunk_results_dir = 'chunk_results'; 
-selected_files = {
-    'results_chunk_1.mat',
-    'results_chunk_2.mat',
-    'results_chunk_3.mat'
-};
+
+% [!!! 修改点：在这里配置要加载的文件和数量 !!!]
+% 您可以按需添加或修改这个结构体数组
+% 使用 'inf' 表示加载该文件中的所有设备
+chunk_load_config = [
+    struct('file', 'results_chunk_1.mat', 'ac_rows', inf, 'ev_rows', 6000),
+    struct('file', 'results_chunk_2.mat', 'ac_rows', inf, 'ev_rows', 6000),
+    struct('file', 'results_chunk_3.mat', 'ac_rows', inf, 'ev_rows', inf),
+    struct('file', 'results_chunk_4.mat', 'ac_rows', inf, 'ev_rows', 5000),
+   struct('file', 'results_chunk_5.mat', 'ac_rows', 2000, 'ev_rows', 900),
+    struct('file', 'results_chunk_6.mat', 'ac_rows', inf, 'ev_rows', 1000),
+    struct('file', 'results_chunk_7.mat', 'ac_rows', inf, 'ev_rows', inf),
+    struct('file', 'results_chunk_8.mat', 'ac_rows', inf, 'ev_rows', inf),
+    struct('file', 'results_chunk_9.mat', 'ac_rows', inf, 'ev_rows', inf),
+    struct('file', 'results_chunk_10.mat', 'ac_rows', inf, 'ev_rows', inf),
+
+];
+% [!!! 修改结束 !!!]
+
+
 run_directions = {'Up', 'Down'}; 
 
 W_cost = 0.6;              % 成本权重
 W_complementarity = 0.4;   % 互补性权重 (SDCI & Rho)
+
+plotData = struct(); 
 
 fprintf('启动 VPP 多目标优化 (Cost=%.1f, Comp=%.1f)...\n', W_cost, W_complementarity);
 
@@ -23,7 +41,8 @@ for d_idx = 1:length(run_directions)
     fprintf('\n>>> 开始处理 %s (调节) 方向 >>>\n', upper(this_dir));
 
     % --- 2.1 加载数据 ---
-    SimData = load_simulation_data_from_chunks(chunk_results_dir, selected_files, this_dir);
+    % [!!! 修改点：传递新的配置结构体 !!!]
+    SimData = load_simulation_data_from_chunks(chunk_results_dir, chunk_load_config, this_dir);
     fprintf('数据加载完毕: AC=%d, EV=%d, T=%d\n', SimData.nAC, SimData.nEV, SimData.T);
 
     % --- 2.2 生成配套输入 ---
@@ -45,10 +64,7 @@ for d_idx = 1:length(run_directions)
 
     % --- [保留] 计算基准互补性指标 (Ori) ---
     fprintf('正在计算 %s 基准 (Ori) 互补性指标...\n', this_dir);
-    % 使用绝对值判断基准参与状态 (兼容下调的负值)
     u_baseline = [abs(SimData.p_AC) > 1e-4; abs(SimData.p_EV) > 1e-4];
-    % Metrics_ori = calculate_solution_metrics(u_baseline, SimData, 'ori');
-    % u_baseline = [abs(SimData.p_AC) ~= 1e-4; abs(SimData.p_EV) ~= 1e-4];
     Metrics_ori = calculate_solution_metrics(u_baseline, SimData, 'ori');
 
     % --- 2.4 逐时贪心优化 ---
@@ -80,21 +96,61 @@ for d_idx = 1:length(run_directions)
     fprintf('SDCI: Ori=%.4f -> Opt=%.4f\n', Metrics_ori.SDCI, Metrics_opt.SDCI);
     fprintf('Rho:  Ori=%.4f -> Opt=%.4f\n', Metrics_ori.Rho, Metrics_opt.Rho);
 
-    % --- [保留] 2.7 结果可视化 ---
-    if ~isdeployed
-        figure('Name', ['Optimization Results - ', this_dir], 'Color', 'w', 'Position', [100,100,800,400]);
-        plot(1:SimData.T, OptIn.P_req, 'k--', 'LineWidth', 2, 'DisplayName', '电网需求');
-        hold on;
-        plot(1:SimData.T, p_opt_t, 'r-', 'LineWidth', 1.5, 'DisplayName', '优化调度出力');
-        % 绘制总潜力作为参考 (使用直接加载的聚合数据)
-        plot(1:SimData.T, SimData.P_AC_agg_loaded + SimData.P_EV_agg_loaded, ...
-             'Color', [0.7 0.7 0.7], 'DisplayName', '系统总潜力');
-        
-        legend('Location', 'bestoutside'); grid on;
-        xlabel('时间步'); ylabel('功率 (kW)');
-        title(sprintf('%s 方向调节优化结果 (W_{cost}=%.1f, W_{comp}=%.1f)', this_dir, W_cost, W_complementarity));
-    end
-end
+    % --- [新增] 2.7 将绘图数据暂存到结构体 ---
+    fprintf('正在为 %s 方向暂存绘图数据...\n', this_dir);
+    plotData.(this_dir).time_axis = (1:SimData.T);
+    plotData.(this_dir).P_req = OptIn.P_req; % (1 x T)
+    plotData.(this_dir).p_opt_t = p_opt_t; % (1 x T)
+    plotData.(this_dir).P_potential_total = SimData.P_AC_agg_loaded + SimData.P_EV_agg_loaded; % (1 x T)
+    plotData.(this_dir).W_cost = W_cost;
+    plotData.(this_dir).W_complementarity = W_complementarity;
+    
+end % 结束主循环
 
 toc;
 fprintf('\n全部完成。\n');
+
+%% 3. [新增] 保存绘图数据到 MAT 文件
+try
+    fprintf('\n正在将所有绘图数据保存到 %s ...\n', plot_data_filename);
+    save(plot_data_filename, 'plotData');
+    fprintf('数据保存成功。\n');
+catch ME_save
+    fprintf('*** 保存绘图 MAT 文件失败: %s ***\n', ME_save.message);
+end
+
+% %% 4. [新增] 从 MAT 文件加载数据并执行绘图
+% if ~isdeployed && exist(plot_data_filename, 'file')
+%     fprintf('\n正在从 %s 加载数据并开始绘图...\n', plot_data_filename);
+%     loadedPlotData = load(plot_data_filename);
+% 
+%     if isfield(loadedPlotData, 'plotData')
+%         plotData = loadedPlotData.plotData;
+%         saved_directions = fieldnames(plotData);
+% 
+%         for i = 1:length(saved_directions)
+%             this_dir = saved_directions{i};
+%             data = plotData.(this_dir);
+% 
+%             fprintf('  正在绘制 %s 方向的图像...\n', this_dir);
+% 
+%             figure('Name', ['Optimization Results - ', this_dir, ' (from MAT)'], 'Color', 'w', 'Position', [100+i*50, 100+i*50, 800, 400]);
+%             plot(data.time_axis, data.P_req, 'k--', 'LineWidth', 2, 'DisplayName', '电网需求');
+%             hold on;
+%             plot(data.time_axis, data.p_opt_t, 'r-', 'LineWidth', 1.5, 'DisplayName', '优化调度出力');
+%             plot(data.time_axis, data.P_potential_total, ...
+%                  'Color', [0.7 0.7 0.7], 'DisplayName', '系统总潜力');
+% 
+%             legend('Location', 'bestoutside'); grid on;
+%             xlabel('时间步'); ylabel('功率 (kW)');
+%             title(sprintf('%s 方向调节优化结果 (W_{cost}=%.1f, W_{comp}=%.1f)', this_dir, data.W_cost, data.W_complementarity));
+%         end
+%         fprintf('绘图完成。\n');
+%     else
+%         fprintf('错误: %s 中未找到 "plotData" 结构体。\n', plot_data_filename);
+%     end
+% elseif isdeployed
+%      fprintf('\n处于部署环境 (isdeployed=true)，跳过绘图。\n');
+% else
+%      fprintf('\n未找到绘图数据文件 %s，跳过绘图。\n', plot_data_filename);
+% end

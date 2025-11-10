@@ -1,16 +1,16 @@
-function SimData = load_simulation_data_from_chunks(chunk_dir, selected_mat_files, direction)
-    % load_simulation_data_from_chunks (v8 - 直接读取聚合数据 & 保留原始符号)
+function SimData = load_simulation_data_from_chunks(chunk_dir, chunk_load_config, direction)
+    % load_simulation_data_from_chunks (v9 - 支持按行数限制加载个体数据)
     
-    if isempty(selected_mat_files)
-        error('未指定要加载的文件 (selected_mat_files 为空)。');
+    if isempty(chunk_load_config)
+        error('未指定要加载的配置 (chunk_load_config 为空)。');
     end
     
     all_p_AC = {};
     all_p_EV = {};
     
-    % [新增] 初始化聚合功率累加器
-    P_AC_agg_accumulator = [];
-    P_EV_agg_accumulator = [];
+    % [!!! 移除：不再累加文件中预先聚合的数据 !!!]
+    % P_AC_agg_accumulator = [];
+    % P_EV_agg_accumulator = [];
 
     T_ac = 0;
     T_ev = 0;
@@ -19,19 +19,17 @@ function SimData = load_simulation_data_from_chunks(chunk_dir, selected_mat_file
     if strcmpi(direction, 'Up')
         p_field_ac_ind = 'AC_Up_Individual';
         p_field_ev_ind = 'EV_Up_Individual';
-        p_field_ac_agg = 'AC_Up';    % 聚合数据字段
-        p_field_ev_agg = 'EV_Up';
     elseif strcmpi(direction, 'Down')
         p_field_ac_ind = 'AC_Down_Individual';
         p_field_ev_ind = 'EV_Down_Individual';
-        p_field_ac_agg = 'AC_Down';  % 聚合数据字段
-        p_field_ev_agg = 'EV_Down';
     else
         error('无效的调节方向: %s. 必须是 "Up" 或 "Down".', direction);
     end
 
-    for i = 1:length(selected_mat_files)
-        file_name = selected_mat_files{i};
+    % [!!! 修改点：遍历 chunk_load_config 结构体 !!!]
+    for i = 1:length(chunk_load_config)
+        config = chunk_load_config(i); % 获取当前配置
+        file_name = config.file;
         file_path = fullfile(chunk_dir, file_name);
         
         if ~exist(file_path, 'file')
@@ -48,36 +46,37 @@ function SimData = load_simulation_data_from_chunks(chunk_dir, selected_mat_file
             end
             res = data.results;
 
-            % --- 1. 加载个体数据 (保留原始符号) ---
-            if isfield(res, p_field_ac_ind)
-                all_p_AC{end+1} = res.(p_field_ac_ind);
+            % --- 1. 加载个体数据 (!!! 应用行数限制 !!!) ---
+            if isfield(res, p_field_ac_ind) && ~isempty(res.(p_field_ac_ind))
+                ac_data_chunk = res.(p_field_ac_ind);
+                % 确定要加载的行数
+                rows_to_take_ac = min(config.ac_rows, size(ac_data_chunk, 1));
+                % 提取指定行数的数据
+                all_p_AC{end+1} = ac_data_chunk(1:rows_to_take_ac, :);
+                
                 if T_ac == 0, T_ac = size(all_p_AC{end}, 2); end
+                fprintf('    -> %s: 加载 %d / %d 行 (限制: %s)\n', ...
+                    p_field_ac_ind, rows_to_take_ac, size(ac_data_chunk, 1), num2str(config.ac_rows));
+            else
+                 fprintf('    -> %s: 未找到或为空。\n', p_field_ac_ind);
             end
-            if isfield(res, p_field_ev_ind)
-                all_p_EV{end+1} = res.(p_field_ev_ind);
+            
+            if isfield(res, p_field_ev_ind) && ~isempty(res.(p_field_ev_ind))
+                ev_data_chunk = res.(p_field_ev_ind);
+                % 确定要加载的行数
+                rows_to_take_ev = min(config.ev_rows, size(ev_data_chunk, 1));
+                % 提取指定行数的数据
+                all_p_EV{end+1} = ev_data_chunk(1:rows_to_take_ev, :);
+                
                 if T_ev == 0, T_ev = size(all_p_EV{end}, 2); end
+                 fprintf('    -> %s: 加载 %d / %d 行 (限制: %s)\n', ...
+                    p_field_ev_ind, rows_to_take_ev, size(ev_data_chunk, 1), num2str(config.ev_rows));
+            else
+                 fprintf('    -> %s: 未找到或为空。\n', p_field_ev_ind);
             end
 
-            % --- [新增] 2. 直接读取并累加聚合数据 ---
-            % 确保数据为行向量 (1 x T) 以便统一累加
-            if isfield(res, p_field_ac_agg)
-                agg_data = res.(p_field_ac_agg);
-                if iscolumn(agg_data), agg_data = agg_data'; end 
-                if isempty(P_AC_agg_accumulator)
-                    P_AC_agg_accumulator = agg_data;
-                else
-                    P_AC_agg_accumulator = P_AC_agg_accumulator + agg_data;
-                end
-            end
-             if isfield(res, p_field_ev_agg)
-                agg_data = res.(p_field_ev_agg);
-                if iscolumn(agg_data), agg_data = agg_data'; end
-                if isempty(P_EV_agg_accumulator)
-                    P_EV_agg_accumulator = agg_data;
-                else
-                    P_EV_agg_accumulator = P_EV_agg_accumulator + agg_data;
-                end
-            end
+            % --- [!!! 移除：不再加载聚合数据 !!!] ---
+            % (原始加载 P_AC_agg_accumulator 和 P_EV_agg_accumulator 的代码已删除)
 
         catch ME
             warning('加载文件 %s 时出错: %s', file_name, ME.message);
@@ -85,31 +84,53 @@ function SimData = load_simulation_data_from_chunks(chunk_dir, selected_mat_file
     end
     
     % 数据验证
-    if isempty(all_p_AC) || isempty(all_p_EV)
-        error('未能加载到有效的 AC 或 EV 数据。');
+    if T_ac == 0 && T_ev == 0 && (isempty(all_p_AC) || isempty(all_p_EV))
+        warning('未能加载到任何有效的 AC 或 EV 数据。');
+        % 即使为空也继续，以便脚本可以处理 0 设备的情况
     end
-    if T_ac ~= T_ev
+    
+    if T_ac ~= T_ev && T_ac > 0 && T_ev > 0
         warning('AC 和 EV 数据的时间步长不一致 (%d vs %d)。', T_ac, T_ev);
     end
     
+    % 确定最终 T (优先使用AC，否则使用EV)
+    if T_ac > 0
+        SimData.T = T_ac;
+    else
+        SimData.T = T_ev;
+    end
+    
     % 合并个体数据
-    SimData.p_AC = cat(1, all_p_AC{:});
-    SimData.p_EV = cat(1, all_p_EV{:});
+    if ~isempty(all_p_AC)
+        SimData.p_AC = cat(1, all_p_AC{:});
+    else
+        SimData.p_AC = zeros(0, SimData.T); % 创建一个 0 x T 的空矩阵
+    end
+    
+    if ~isempty(all_p_EV)
+        SimData.p_EV = cat(1, all_p_EV{:});
+    else
+        SimData.p_EV = zeros(0, SimData.T); % 创建一个 0 x T 的空矩阵
+    end
+
     SimData.nAC = size(SimData.p_AC, 1);
     SimData.nEV = size(SimData.p_EV, 1);
     SimData.N_total = SimData.nAC + SimData.nEV;
-    SimData.T = T_ac;
     
-    % --- [新增] 存储直接读取的聚合数据 ---
-    % 如果文件中没有聚合数据，作为回退，使用现场求和
-    if isempty(P_AC_agg_accumulator)
+    
+    % --- [!!! 修改点：从加载的个体数据重新计算聚合值 !!!] ---
+    fprintf('  正在根据加载的 %d 台 AC 和 %d 台 EV 重新计算聚合潜力...\n', SimData.nAC, SimData.nEV);
+    
+    if SimData.nAC > 0
         SimData.P_AC_agg_loaded = sum(SimData.p_AC, 1);
     else
-        SimData.P_AC_agg_loaded = P_AC_agg_accumulator;
+        SimData.P_AC_agg_loaded = zeros(1, SimData.T);
     end
-    if isempty(P_EV_agg_accumulator)
+    
+    if SimData.nEV > 0
         SimData.P_EV_agg_loaded = sum(SimData.p_EV, 1);
     else
-        SimData.P_EV_agg_loaded = P_EV_agg_accumulator;
+        SimData.P_EV_agg_loaded = zeros(1, SimData.T);
     end
+    
 end
