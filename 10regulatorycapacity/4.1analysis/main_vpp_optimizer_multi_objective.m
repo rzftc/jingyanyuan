@@ -27,6 +27,7 @@ chunk_load_config = [
 
 
 run_directions = {'Up', 'Down'}; 
+% run_directions = { 'Down'}; 
 
 W_cost = 0.6;              % 成本权重
 W_complementarity = 0.4;   % 互补性权重 (SDCI & Rho)
