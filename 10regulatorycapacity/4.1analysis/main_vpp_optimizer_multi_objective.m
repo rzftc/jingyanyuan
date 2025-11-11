@@ -11,9 +11,16 @@ chunk_results_dir = 'chunk_results_abs_hour';
 % 您可以按需添加或修改这个结构体数组
 % 使用 'inf' 表示加载该文件中的所有设备
 chunk_load_config = [
-    struct('file', 'results_chunk_1.mat', 'ac_rows', 0, 'ev_rows', 100),
- struct('file', 'results_chunk_1.mat', 'ac_rows', 0, 'ev_rows', 100),
-  struct('file', 'results_chunk_1.mat', 'ac_rows', 0, 'ev_rows', 100),
+    struct('file', 'results_chunk_1.mat', 'ac_rows', inf, 'ev_rows', 6000),
+    struct('file', 'results_chunk_2.mat', 'ac_rows', inf, 'ev_rows', 8000),
+    struct('file', 'results_chunk_3.mat', 'ac_rows', inf, 'ev_rows', 5000),
+    struct('file', 'results_chunk_4.mat', 'ac_rows', inf, 'ev_rows', 8000),
+    struct('file', 'results_chunk_5.mat', 'ac_rows', inf, 'ev_rows', inf),
+    struct('file', 'results_chunk_6.mat', 'ac_rows', inf, 'ev_rows', 6000),
+    struct('file', 'results_chunk_7.mat', 'ac_rows', inf, 'ev_rows', 8000),
+    struct('file', 'results_chunk_8.mat', 'ac_rows', inf, 'ev_rows', 5000),
+    struct('file', 'results_chunk_9.mat', 'ac_rows', inf, 'ev_rows', 8000),
+    struct('file', 'results_chunk_10.mat', 'ac_rows', inf, 'ev_rows', inf),
 ];
 % [!!! 修改结束 !!!]
 

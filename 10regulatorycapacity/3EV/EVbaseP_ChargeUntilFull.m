@@ -22,7 +22,7 @@ function P_base_sequence = EVbaseP_ChargeUntilFull(C_EV, eta, E_tar, E_in, ...
 % 输出参数:
 %   P_base_sequence     - 基线功率序列 (列向量, num_time_points x 1)，单位 kW。
     
-    if length(varargin) < 4
+    if length(varargin) < 5
         error('输入参数不足。期望通过varargin输入p_on和num_time_points。');
     end
     
