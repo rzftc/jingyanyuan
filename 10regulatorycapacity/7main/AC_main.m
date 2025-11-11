@@ -92,7 +92,7 @@ for k = 1:num_prices_to_simulate % Loop counter from 1 to number of prices to si
             temp_ACs_for_price_scenario(i).Tmax = temp_ACs_for_price_scenario(i).Tset_original + deltaT_flex_magnitude;
             temp_ACs_for_price_scenario(i).Tmin = temp_ACs_for_price_scenario(i).Tset_original - deltaT_flex_magnitude;
             temp_ACs_for_price_scenario(i).Tmax = min(temp_ACs_for_price_scenario(i).Tmax, 28);
-            temp_ACs_for_price_scenario(i).Tmin = max(temp_ACs_for_price_scenario(i).Tmin, 16);
+            temp_ACs_for_price_scenario(i).Tmin = max(temp_ACs_for_price_scenario(i).Tmin, 18);
         end
 
         % Generate ambient temperature profile
@@ -129,7 +129,7 @@ for k = 1:num_prices_to_simulate % Loop counter from 1 to number of prices to si
 
                 % Update SOC
                 SOC_val = calculateACS_single(temp_ACs_for_price_scenario(i).T_ja(t_idx),...
-                                             temp_ACs_for_price_scenario(i).Tmax, temp_ACs_for_price_scenario(i).Tmin);
+                                            temp_ACs_for_price_scenario(i).Tmax, temp_ACs_for_price_scenario(i).Tmin);
 
                 % Calculate adjustment potential
                 [DeltaP_plus_t, DeltaP_minus_t] = calculateACAdjustmentPotentia(...
@@ -210,12 +210,18 @@ end
 % --- 修改结束 ---
 hold off;
 
-xlabel('时间 (小时)', 'FontSize', 16);
-ylabel('集群上调潜力 (kW)', 'FontSize', 16);
+xlabel('时间', 'FontSize', 18); % <-- 修改
+ylabel('集群上调潜力 (kW)', 'FontSize', 18);
 if ~isempty(legend_entries_up)
-    legend(legend_entries_up, 'Location', 'best', 'FontSize', 14);
+    legend(legend_entries_up, 'Location', 'best', 'FontSize', 16);
 end
-set(gca, 'FontSize', 14);
+set(gca, 'FontSize', 16);
+
+% --- 新增修改：设置X轴刻度为HH:MM格式 ---
+xticks([0, 6, 12, 18, 24]);
+xticklabels({'00:00', '06:00', '12:00', '18:00', '24:00'});
+xlim([0, 24]); % 确保X轴范围与刻度匹配
+% --- 修改结束 ---
 
 print('-dpng', '-r400', 'AC_Cluster_Up_Regulation_by_Selected_Price.png');
 fprintf('空调集群上调潜力图已保存为 AC_Cluster_Up_Regulation_by_Selected_Price.png\n');
@@ -239,12 +245,18 @@ end
 % --- 修改结束 ---
 hold off;
 
-xlabel('时间 (小时)', 'FontSize', 16);
-ylabel('集群下调潜力 (kW)', 'FontSize', 16);
+xlabel('时间', 'FontSize', 18); % <-- 修改
+ylabel('集群下调潜力 (kW)', 'FontSize', 18);
 if ~isempty(legend_entries_down)
-    legend(legend_entries_down, 'Location', 'best', 'FontSize', 14);
+    legend(legend_entries_down, 'Location', 'best', 'FontSize', 16);
 end
-set(gca, 'FontSize', 14);
+set(gca, 'FontSize', 16);
+
+% --- 新增修改：设置X轴刻度为HH:MM格式 ---
+xticks([0, 6, 12, 18, 24]);
+xticklabels({'00:00', '06:00', '12:00', '18:00', '24:00'});
+xlim([0, 24]); % 确保X轴范围与刻度匹配
+% --- 修改结束 ---
 
 print('-dpng', '-r400', 'AC_Cluster_Down_Regulation_by_Selected_Price.png');
 fprintf('空调集群下调潜力图已保存为 AC_Cluster_Down_Regulation_by_Selected_Price.png\n');
