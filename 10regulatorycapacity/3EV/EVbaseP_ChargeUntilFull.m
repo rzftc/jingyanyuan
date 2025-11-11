@@ -28,7 +28,7 @@ function P_base_sequence = EVbaseP_ChargeUntilFull(C_EV, eta, E_tar, E_in, ...
     
     p_on = varargin{2}; % 额定充电功率
     num_time_points = varargin{4}; % 总时间点数
-    
+    current_t = varargin{5};
     % 初始化输出序列和当前电量状态
     P_base_sequence = zeros(num_time_points, 1);
     E_current = E_in;
@@ -43,7 +43,7 @@ function P_base_sequence = EVbaseP_ChargeUntilFull(C_EV, eta, E_tar, E_in, ...
  
     % 遍历仿真时间范围内的每个时间点
     for t_idx = 1:num_time_points
-        current_time = (t_idx - 1) * dt; % 当前时间区间的开始时间
+        current_time = current_t(t_idx); % 当前时间区间的开始时间
 
         % 判断 EV 当前是否接入电网 (在线)
         % EV 在线条件: current_time 在 [t_in, t_dep) 区间内

@@ -23,14 +23,14 @@ t_adj = 1;                                      % 调节时长（小时），从
 
 %% 1.5. *** 模块运行控制 ***
 % --- 请在这里配置您想运行的模块 ---
-runAC = false;  % <--- 设置 true 以运行 AC 仿真
+runAC = true;  % <--- 设置 true 以运行 AC 仿真
 runEV = true;  % <--- 设置 true 以运行 EV 仿真
 % ---------------------------------
 
 %% 1.6. *** 新增：分块范围控制 (您的新需求) ***
 % --- 请在这里配置您想运行的分块范围 ---
 startChunk = 1;    % <--- 设置起始块编号 (例如: 1)
-endChunk = 1;    % <--- 设置结束块编号 (例如: 100)。(设置为 inf 可运行到文件末尾)
+endChunk = 10;    % <--- 设置结束块编号 (例如: 100)。(设置为 inf 可运行到文件末尾)
 % ---------------------------------
 
 if ~runAC && ~runEV
@@ -51,7 +51,7 @@ if ~exist(outputDir, 'dir')
 end
              
 %% 3. *** 新增：主分块循环 ***
-chunkSize = 100;  % *** 每次处理1000台设备 ***
+chunkSize = 10000;  % *** 每次处理1000台设备 ***
 
 % *** 修改：从您指定的 startChunk 开始 ***
 chunkIndex = startChunk;   
@@ -193,7 +193,7 @@ while true
         %% 4.2 EV目标电量调整
         temp_EVs = EVs; 
         parfor i = 1:num_EV
-            % temp_EVs(i).p_incentive = 11;
+            temp_EVs(i).p_incentive = 35;
             participation = calculateParticipation(temp_EVs(i).p_incentive, base_price);
             ptcp_result = (rand() < participation);
             temp_EVs(i).ptcp = ptcp_result;
