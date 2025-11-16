@@ -5,6 +5,8 @@ function AC_main_Stateful_Simulation_Plotting()
     % 2. 实现大论文 2.4.1 节的聚合模型 (式 2-37) 和指令分解 (式 2-35)。
     % 3. 严格遵循流程图（image_912548.png）的仿真逻辑。
     % 4. [V2 绘图] 绘制用户要求的 SOC 对比图和功率跟踪对比图 (图例简化)。
+    % 5. [V3 用户修改] 绘制所有单体SOC曲线为不同颜色。
+    % 6. [V4 用户修改] 新增基于SOC历史反推的室内温度曲线图。
     
     clear; close all; clc;
     tic; 
@@ -129,7 +131,6 @@ function AC_main_Stateful_Simulation_Plotting()
         Agg_P_Command_History(t_idx) = Delta_P_S_command;
         
         % 3. 预测目标聚合 SOC(t+1) (流程图 步骤5)
-        % (实现 式 2-36)
         SOC_target_next = AggParams.A * SOC_agg_t + AggParams.B * Delta_P_S_command + AggParams.C;
         SOC_target_next = max(0, min(1, SOC_target_next)); % 约束
 
@@ -146,17 +147,15 @@ function AC_main_Stateful_Simulation_Plotting()
             soc_current_i = CURRENT_SOC_AC(i); % 获取 SOC(t)
             
             % A. 计算当前物理潜力 (用于记录和约束)
-            % 依赖 2AC/calculateACAdjustmentPotentia.m
             [P_plus, P_minus] = calculateACAdjustmentPotentia(...
                 0, 1e6, -1e6, ... 
                 ac_i.alpha, ac_i.beta, ac_i.gamma,...
-                soc_current_i, dt); % (!!! 使用 dt, 不是 t_adj !!!)
+                soc_current_i, dt);
             
             temp_AC_Up_agg = temp_AC_Up_agg + P_plus;
             temp_AC_Down_agg = temp_AC_Down_agg + P_minus;
             
             % B. 反解理论功率 ΔP_j (流程图 步骤6)
-            % 依赖 2AC/dispatchACOrderByStateConsistent.m 反解逻辑
             delta_Pj_theory = 0;
             if abs(ac_i.beta) > 1e-9
                 delta_Pj_theory = (SOC_target_next - ac_i.alpha * soc_current_i - ac_i.gamma) / ac_i.beta;
@@ -166,7 +165,6 @@ function AC_main_Stateful_Simulation_Plotting()
             delta_Pj_clipped = max(P_minus, min(P_plus, delta_Pj_theory));
             
             % D. 更新状态 (实现 式 2-10)
-            % 依赖 2AC/updateACSOC_single.m
             soc_next_i = updateACSOC_single(soc_current_i, delta_Pj_clipped, ...
                 ac_i.alpha, ac_i.beta, ac_i.gamma);
                 
@@ -187,6 +185,28 @@ function AC_main_Stateful_Simulation_Plotting()
     end % 结束 t_idx 循环
     
     fprintf('  Step 5: 仿真完成。\n');
+
+    % --- [新增] 步骤 5.5: 反推室内温度 ---
+    fprintf('  Step 5.5: 正在反推室内温度历史...\n');
+    % 从参与的空调中获取 Tmax 和 Tmin 向量 (N_p x 1)
+    Tmax_vec_p = [ACs_participating.Tmax]'; 
+    Tmin_vec_p = [ACs_participating.Tmin]'; 
+    TRange_vec_p = Tmax_vec_p - Tmin_vec_p;
+    
+    % 确保范围不为0，避免除零（尽管 SOC 应该始终在 0-1）
+    TRange_vec_p(abs(TRange_vec_p) < 1e-6) = 1e-6; 
+    
+    % 将 Tmax 和 TRange 复制为 (T_steps_total x N_p) 矩阵
+    Tmax_matrix_p = repmat(Tmax_vec_p', T_steps_total, 1); 
+    Tmin_matrix_p = repmat(Tmin_vec_p', T_steps_total, 1); % (新增，用于绘图)
+    TRange_matrix_p = repmat(TRange_vec_p', T_steps_total, 1);
+    
+    % Individual_SOC_History 是 (T_steps_total x N_p)
+    % 反推公式: T_j(t) = Tmax_j - SOC_j(t) * (Tmax_j - Tmin_j)
+    Individual_Temp_History = Tmax_matrix_p - Individual_SOC_History .* TRange_matrix_p;
+    fprintf('  Step 5.5: 温度反推完成。\n');
+    % --- [新增] 结束 ---
+
     
     %% 6. 绘图 (实现用户要求)
     fprintf('Step 6: 正在生成对比图...\n');
@@ -213,36 +233,36 @@ function AC_main_Stateful_Simulation_Plotting()
     grid(ax1, 'on');
 
     
-    % --- 图 2: 单体空调SOC vs 聚合模型SOC (您的要求 1, 简化图例) ---
-    figure('Name', 'SOC状态对比 (理论分解)', 'Position', [100 550 1000 450]);
+    % --- 图 2: 单体空调SOC vs 聚合模型SOC (*** 按您的要求修改 ***) ---
+    figure('Name', 'SOC状态对比 (多曲线)', 'Position', [100 550 1000 450]);
     ax2 = axes;
     hold(ax2, 'on');
     
-    % 1. 绘制所有单体SOC (使用半透明灰色)
-    if num_AC_participating > 0
-        % 使用 'plot' 的矩阵功能一次性绘制所有列
-        h_individual = plot(ax2, time_points, Individual_SOC_History, ...
-             'Color', [0.7 0.7 0.7 0.3], 'LineWidth', 0.5);
-        
-        % 关键：只为第一个句柄设置DisplayName，并隐藏其余句柄
-        set(h_individual(1), 'DisplayName', '单体空调的SOC');
-        if num_AC_participating > 1
-             set(h_individual(2:end), 'HandleVisibility', 'off');
-        end
-    end
+    % 1. 绘制所有单体SOC (自动分配不同颜色)
+    h_individual = plot(ax2, time_points, Individual_SOC_History, 'LineWidth', 0.5);
     
-    % 2. 绘制聚合平均SOC (使用亮红色，覆盖在上方)
-    h_agg = plot(ax2, time_points, Agg_SOC_History, 'r-', 'LineWidth', 2.5, ...
+    % 2. 绘制聚合平均SOC (黑色虚线)
+    h_agg = plot(ax2, time_points, Agg_SOC_History, 'k--', 'LineWidth', 3, ...
         'DisplayName', '空调聚合模型的SOC (均值)');
     
+    % 3. 图例管理
+    if num_AC_participating > 0
+        set(h_individual(1), 'DisplayName', '单体空调的SOC');
+    end
+    if num_AC_participating > 1
+         set(h_individual(2:end), 'HandleVisibility', 'off');
+    end
+    
     hold(ax2, 'off');
+    
+    % 4. 格式化
     xlabel(ax2, '时间 (小时)', 'FontSize', 12);
     ylabel(ax2, '空调SOC', 'FontSize', 12);
-    title(ax2, '图2：单体空调SOC 与 聚合模型SOC 对比', 'FontSize', 14);
+    title(ax2, '图2：单体空调SOC 与 聚合模型SOC 对比 (多曲线)', 'FontSize', 14);
     
-    % 3. 创建简化的图例
+    % 5. 创建图例
     if num_AC_participating > 0
-        legend(ax2, [h_individual(1), h_agg], 'Location', 'best', 'FontSize', 11);
+        legend(ax2, [h_agg, h_individual(1)], 'Location', 'best', 'FontSize', 11);
     else
         legend(ax2, h_agg, 'Location', 'best', 'FontSize', 11);
     end
@@ -253,6 +273,47 @@ function AC_main_Stateful_Simulation_Plotting()
     xlim(ax2, [0, 24]);
     ylim(ax2, [-0.1, 1.1]);
     grid(ax2, 'on');
+    % --- 修改结束 ---
+
+    % --- [新增] 图 3: 单体空调室内温度 (反推) ---
+    figure('Name', '室内温度变化 (反推)', 'Position', [100 300 1000 450]);
+    ax3 = axes;
+    hold(ax3, 'on');
+    
+    % 1. 绘制所有单体温度 (自动使用不同颜色)
+    h_temp_individual = plot(ax3, time_points, Individual_Temp_History, 'LineWidth', 0.5);
+    
+    % 2. 绘制 Tmax 和 Tmin 的平均边界 (作为参考)
+    h_tmax_avg = plot(ax3, time_points, mean(Tmax_matrix_p, 2), 'r--', 'LineWidth', 2, 'DisplayName', '平均 Tmax');
+    h_tmin_avg = plot(ax3, time_points, mean(Tmin_matrix_p, 2), 'b--', 'LineWidth', 2, 'DisplayName', '平均 Tmin');
+
+    % 3. 图例管理
+    legend_handles = [h_tmax_avg, h_tmin_avg];
+    if num_AC_participating > 0
+        set(h_temp_individual(1), 'DisplayName', '单体空调温度 (反推)');
+        legend_handles = [h_temp_individual(1), h_tmax_avg, h_tmin_avg];
+    end
+    if num_AC_participating > 1
+         set(h_temp_individual(2:end), 'HandleVisibility', 'off');
+    end
+    
+    hold(ax3, 'off');
+    
+    % 4. 格式化
+    xlabel(ax3, '时间 (小时)', 'FontSize', 12);
+    ylabel(ax3, '室内温度 (°C)', 'FontSize', 12);
+    title(ax3, '图3：单体空调室内温度变化 (基于SOC反推)', 'FontSize', 14);
+    
+    % 5. 创建图例
+    legend(ax3, legend_handles, 'Location', 'best', 'FontSize', 11);
+    
+    set(ax3, 'FontSize', 11);
+    xticks(ax3, [0, 6, 12, 18, 24]);
+    xticklabels(ax3, {'00:00', '06:00', '12:00', '18:00', '24:00'});
+    xlim(ax3, [0, 24]);
+    grid(ax3, 'on');
+    % --- [新增] 结束 ---
+
 
     fprintf('所有仿真和绘图任务完成。\n');
     toc;
