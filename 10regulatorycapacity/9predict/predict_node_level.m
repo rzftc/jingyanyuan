@@ -314,17 +314,23 @@ disp(res_compare_ac);
 fprintf('\n=== 节点级 EV 规模多模型预测对比 (单位: 万辆) ===\n');
 disp(res_compare_ev);
 
-% 绘图对比
-figure('Name', '多模型节点级预测对比', 'Color', 'w', 'Position', [100, 100, 1000, 400]);
-subplot(1,2,1); hold on; title('节点 AC 预测对比');
+% -------------------- [修改开始] --------------------
+% 绘图对比 (AC)
+figure('Name', '节点AC多模型预测对比', 'Color', 'w', 'Position', [100, 100, 500, 400]);
+hold on; 
+% title('节点 AC 预测对比'); % <-- 移除标题
 plot(target_years, res_compare_ac.Base_High, 'k-o', 'LineWidth', 2, 'DisplayName', '原方法(High)');
 plot(target_years, res_compare_ac.Grey_GM11, 'b--s', 'LineWidth', 1.5, 'DisplayName', 'GM(1,1)');
 plot(target_years, res_compare_ac.ARIMA, 'g-.^', 'LineWidth', 1.5, 'DisplayName', 'ARIMA(插值)');
 plot(target_years, res_compare_ac.Gompertz, 'm:x', 'LineWidth', 2, 'DisplayName', 'Dyn-Gompertz');
 plot(target_years, res_compare_ac.RandForest_AR, 'c-d', 'LineWidth', 1.5, 'DisplayName', 'RF(自回归)');
 legend('Location', 'best'); xlabel('年份'); ylabel('万台'); grid on; xlim([target_years(1)-2, target_years(end)+2]);
+hold off;
 
-subplot(1,2,2); hold on; title('节点 EV 预测对比');
+% 绘图对比 (EV)
+figure('Name', '节点EV多模型预测对比', 'Color', 'w', 'Position', [600, 100, 500, 400]);
+hold on; 
+% title('节点 EV 预测对比'); % <-- 移除标题
 plot(target_years, res_compare_ev.Base_High, 'k-o', 'LineWidth', 2, 'DisplayName', '原方法(High)');
 % [!!! 替换 GM(1,1) 为 AR-SVR !!!]
 plot(target_years, res_compare_ev.AR_SVR, 'b--s', 'LineWidth', 1.5, 'DisplayName', 'AR-SVR');
@@ -333,6 +339,9 @@ plot(target_years, res_compare_ev.ARIMA, 'g-.^', 'LineWidth', 1.5, 'DisplayName'
 plot(target_years, res_compare_ev.Gompertz, 'm:x', 'LineWidth', 2, 'DisplayName', 'Dyn-Gompertz');
 plot(target_years, res_compare_ev.RandForest_AR, 'c-d', 'LineWidth', 1.5, 'DisplayName', 'RF(自回归)');
 legend('Location', 'best'); xlabel('年份'); ylabel('万辆'); grid on; xlim([target_years(1)-2, target_years(end)+2]);
+hold off;
+% -------------------- [修改结束] --------------------
+
 
 fprintf('\n新增模型算例执行完毕。\n');
 % --- 结束新增步骤 ---
