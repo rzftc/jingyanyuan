@@ -369,11 +369,14 @@ ac_fill_x_node = [ac_plot_years_node, fliplr(ac_plot_years_node)];
 ac_fill_y_node = [ac_plot_low_node, fliplr(ac_plot_high_node)];
 
 % --- 5d. 准备 EV 节点绘图数据 ---
+
 ev_plot_years_node = [EV_Hist_Years, predicted_years_ev];
 ev_plot_low_node   = [ev_hist_node_scaled, ev_low_full_node];
+% [!!! 修正 !!!] 确保使用 EV 的历史数据和 EV 的高预测数据
 ev_plot_high_node  = [ev_hist_node_scaled, ev_high_full_node];
 ev_plot_mean_node  = (ev_plot_low_node + ev_plot_high_node) / 2;
 ev_fill_x_node = [ev_plot_years_node, fliplr(ev_plot_years_node)];
+% [!!! 修正 !!!] 确保 fliplr 使用修正后的 ev_plot_high_node
 ev_fill_y_node = [ev_plot_low_node, fliplr(ev_plot_high_node)];
 
 % --- 5e. 中文字体设置 ---
