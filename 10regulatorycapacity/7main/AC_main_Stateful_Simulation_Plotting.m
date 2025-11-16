@@ -4,7 +4,7 @@ function AC_main_Stateful_Simulation_Plotting()
     % 1. 基于 AC_main.m 和 ac_simulation_block.m 的逻辑重构。
     % 2. 实现大论文 2.4.1 节的聚合模型 (式 2-37) 和指令分解 (式 2-35)。
     % 3. 严格遵循流程图（image_912548.png）的仿真逻辑。
-    % 4. 绘制用户要求的 SOC 对比图和功率跟踪对比图。
+    % 4. [V2 绘图] 绘制用户要求的 SOC 对比图和功率跟踪对比图 (图例简化)。
     
     clear; close all; clc;
     tic; 
@@ -156,8 +156,7 @@ function AC_main_Stateful_Simulation_Plotting()
             temp_AC_Down_agg = temp_AC_Down_agg + P_minus;
             
             % B. 反解理论功率 ΔP_j (流程图 步骤6)
-            % (实现 式 2-35 的反解)
-            % ΔP_j = (SOC_target - α_j*SOC(t) - γ_j) / β_j
+            % 依赖 2AC/dispatchACOrderByStateConsistent.m 反解逻辑
             delta_Pj_theory = 0;
             if abs(ac_i.beta) > 1e-9
                 delta_Pj_theory = (SOC_target_next - ac_i.alpha * soc_current_i - ac_i.gamma) / ac_i.beta;
@@ -192,16 +191,13 @@ function AC_main_Stateful_Simulation_Plotting()
     %% 6. 绘图 (实现用户要求)
     fprintf('Step 6: 正在生成对比图...\n');
     
-    % --- 图 1: 各空调响应功率之和 vs 电网调节指令 ---
+    % --- 图 1: 各空调响应功率之和 vs 电网调节指令 (您的要求 2) ---
     figure('Name', '功率跟踪对比 (理论分解)', 'Position', [100 100 1000 450]);
     ax1 = axes;
     hold(ax1, 'on');
     
-    % 绘制指令
     plot(ax1, time_points, Agg_P_Command_History, 'k:', 'LineWidth', 2.5, ...
         'DisplayName', '电网调节指令 (ΔP_s)');
-    
-    % 绘制实际响应
     plot(ax1, time_points, Agg_P_Achieved_History, 'r-', 'LineWidth', 1.5, ...
         'DisplayName', '各空调的响应功率之和 (ΣΔP_j)');
     
@@ -216,28 +212,41 @@ function AC_main_Stateful_Simulation_Plotting()
     xlim(ax1, [0, 24]);
     grid(ax1, 'on');
 
-    % --- 图 2: 单体空调SOC vs 聚合模型SOC ---
+    
+    % --- 图 2: 单体空调SOC vs 聚合模型SOC (您的要求 1, 简化图例) ---
     figure('Name', 'SOC状态对比 (理论分解)', 'Position', [100 550 1000 450]);
     ax2 = axes;
     hold(ax2, 'on');
     
-    % 绘制所有单体SOC (使用半透明灰色)
-    plot(ax2, time_points, Individual_SOC_History(:, 1), ...
-         'Color', [0.7 0.7 0.7 0.3], 'LineWidth', 0.5, 'DisplayName', '单体空调的SOC');
-    if num_AC_participating > 1
-        plot(ax2, time_points, Individual_SOC_History(:, 2:end), ...
-             'Color', [0.7 0.7 0.7 0.3], 'LineWidth', 0.5, 'HandleVisibility', 'off');
+    % 1. 绘制所有单体SOC (使用半透明灰色)
+    if num_AC_participating > 0
+        % 使用 'plot' 的矩阵功能一次性绘制所有列
+        h_individual = plot(ax2, time_points, Individual_SOC_History, ...
+             'Color', [0.7 0.7 0.7 0.3], 'LineWidth', 0.5);
+        
+        % 关键：只为第一个句柄设置DisplayName，并隐藏其余句柄
+        set(h_individual(1), 'DisplayName', '单体空调的SOC');
+        if num_AC_participating > 1
+             set(h_individual(2:end), 'HandleVisibility', 'off');
+        end
     end
     
-    % 绘制聚合平均SOC (使用亮红色)
-    plot(ax2, time_points, Agg_SOC_History, 'r-', 'LineWidth', 2.5, ...
+    % 2. 绘制聚合平均SOC (使用亮红色，覆盖在上方)
+    h_agg = plot(ax2, time_points, Agg_SOC_History, 'r-', 'LineWidth', 2.5, ...
         'DisplayName', '空调聚合模型的SOC (均值)');
     
     hold(ax2, 'off');
     xlabel(ax2, '时间 (小时)', 'FontSize', 12);
     ylabel(ax2, '空调SOC', 'FontSize', 12);
     title(ax2, '图2：单体空调SOC 与 聚合模型SOC 对比', 'FontSize', 14);
-    legend(ax2, 'show', 'Location', 'best');
+    
+    % 3. 创建简化的图例
+    if num_AC_participating > 0
+        legend(ax2, [h_individual(1), h_agg], 'Location', 'best', 'FontSize', 11);
+    else
+        legend(ax2, h_agg, 'Location', 'best', 'FontSize', 11);
+    end
+    
     set(ax2, 'FontSize', 11);
     xticks(ax2, [0, 6, 12, 18, 24]);
     xticklabels(ax2, {'00:00', '06:00', '12:00', '18:00', '24:00'});
