@@ -16,7 +16,7 @@ clear; close all; clc;
 %% 1. --- 用户配置参数 ---
 
 % !!! (用户必须修改) 指向您 *新生成* 的 .mat 结果文件
-mat_file_to_load = 'chunk_results_abs_hour/results_chunk_1.mat'; 
+mat_file_to_load = 'chunk_results_abs_hour_test/results_chunk_12.mat'; 
 
 % !!! (用户必须修改) 指向用于生成该结果的 EV Excel 文件
 ev_excel_file = '2EV_residential.xlsx'; 

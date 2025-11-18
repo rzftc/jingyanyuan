@@ -15,7 +15,7 @@ rng(2023);                                      % 固定随机种子，保证结
 % --- 修改：定义绝对时间范围 (仿照 main_diff_delt_48_updown.m) ---
 simulation_start_hour = 6;  % 仿真开始于 6:00
 simulation_end_hour   = 30; % 仿真结束于次日 6:00 (24 + 6)
-dt = 0.05;                                      % 时间分辨率（小时）
+dt = 1/60;                                      % 时间分辨率（小时）
 % 基于绝对时间生成时间序列
 time_points_absolute = simulation_start_hour:dt:simulation_end_hour; 
 % --- 修改结束 ---
@@ -25,14 +25,14 @@ t_adj = 1;                                      % 调节时长（小时），从
 
 %% 1.5. *** 模块运行控制 ***
 % --- 请在这里配置您想运行的模块 ---
-runAC = true;  % <--- 设置 true 以运行 AC 仿真
+runAC = 0;  % <--- 设置 true 以运行 AC 仿真
 runEV = true;  % <--- 设置 true 以运行 EV 仿真
 % ---------------------------------
 
 %% 1.6. *** 新增：分块范围控制 (您的新需求) ***
 % --- 请在这里配置您想运行的分块范围 ---
-startChunk = 1;    % <--- 设置起始块编号 (例如: 1)
-endChunk = 1;    % <--- [!!! 示例：仅运行第1块 !!!] (设置为 inf 可运行到文件末尾)
+startChunk = 12;    % <--- 设置起始块编号 (例如: 1)
+endChunk = 12;    % <--- [!!! 示例：仅运行第1块 !!!] (设置为 inf 可运行到文件末尾)
 % ---------------------------------
 
 if ~runAC && ~runEV
@@ -47,13 +47,13 @@ if runAC
     acFile = 'AC_template1.xlsx';      
 end
 
-outputDir = 'chunk_results_abs_hour';                   % *** 新增：用于存储结果的文件夹 ***
+outputDir = 'chunk_results_abs_hour_test';                   % *** 新增：用于存储结果的文件夹 ***
 if ~exist(outputDir, 'dir')
     mkdir(outputDir);
 end
              
 %% 3. *** 新增：主分块循环 ***
-chunkSize = 10000;  % *** 每次处理10000台设备 *** [!!! 修正：匹配您的Excel大小 !!!]
+chunkSize = 10;  % *** 每次处理10000台设备 *** [!!! 修正：匹配您的Excel大小 !!!]
 
 % *** 修改：从您指定的 startChunk 开始 ***
 chunkIndex = startChunk;   
