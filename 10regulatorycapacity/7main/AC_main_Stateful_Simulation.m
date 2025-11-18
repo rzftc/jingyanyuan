@@ -78,7 +78,6 @@ parfor i = 1:num_AC
 
     % --- [V10 修正] ---
     % 4. 将统一的 T_ja 分配给所有空调
-    %    (注意：我们不再添加个体噪声，以满足您“T_ja数值都相同”的要求)
     temp_ACs(i).T_ja = base_ambient_temp_unified;
     % --- [V10 修正] 结束 ---
 
@@ -232,7 +231,6 @@ fprintf('  Step 5.6: 正在计算总制冷功率...\n');
 P_standby = 0.05; % 假设 50W 最小功率 (0.05 kW)
 
 % 1. 计算热力学基线 (V10: 确保 P_base > 0)
-%    (T_ja_participating_T, Tset_matrix_p, R_matrix_p, eta_matrix_p)
 Baseline_Power_History = (T_ja_participating_T - Tset_matrix_p) ./ (R_matrix_p .* eta_matrix_p);
 
 % 2. 计算调度后的总功率 (基线 + 调节)
@@ -243,6 +241,15 @@ Total_Power_History(Total_Power_History < P_standby) = P_standby;
 
 fprintf('  Step 5.6: 总功率计算完成。\n');
 % --- [V6] 结束 ---
+
+% --- [新增 V11] 步骤 5.7: 聚合图6所需的数据 ---
+fprintf('  Step 5.7: 聚合基线功率和总制冷功率...\n');
+% 聚合基线功率 (T_steps x 1)
+Agg_Baseline_Power = sum(Baseline_Power_History, 2);
+% 聚合总制冷功率 (T_steps x 1)
+Agg_Total_Power = sum(Total_Power_History, 2);
+fprintf('  Step 5.7: 聚合完成。\n');
+% --- [新增 V11] 结束 ---
 
 
 %% 6. 绘图 (实现用户要求)
@@ -383,6 +390,34 @@ xticklabels(ax5, {'00:00', '06:00', '12:00', '18:00', '24:00'});
 xlim(ax5, [0, 24]);
 grid(ax5, 'on');
 % --- [V10] 结束 ---
+
+% --- [新增 V11] 图 6: 聚合基线功率 vs 聚合总制冷功率 ---
+figure('Name', '聚合功率对比', 'Position', [100 600 1000 450]);
+ax6 = axes;
+hold(ax6, 'on');
+
+% 1. 绘制聚合基线功率之和
+plot(ax6, time_points, Agg_Baseline_Power, 'b--', 'LineWidth', 2, ...
+    'DisplayName', '所有AC的基线功率之和 (ΣP_{base})');
+
+% 2. 绘制聚合总制冷功率之和
+plot(ax6, time_points, Agg_Total_Power, 'r-', 'LineWidth', 2, ...
+    'DisplayName', '所有AC的总制冷功率之和 (ΣP_{total})');
+
+hold(ax6, 'off');
+
+% 3. 格式化
+xlabel(ax6, '时间 (小时)', 'FontSize', 12);
+ylabel(ax6, '聚合功率 (kW)', 'FontSize', 12);
+title(ax6, '图6：聚合基线功率 vs 聚合总制冷功率', 'FontSize', 14);
+legend(ax6, 'show', 'Location', 'best', 'FontSize', 11);
+
+set(ax6, 'FontSize', 11);
+xticks(ax6, [0, 6, 12, 18, 24]);
+xticklabels(ax6, {'00:00', '06:00', '12:00', '18:00', '24:00'});
+xlim(ax6, [0, 24]);
+grid(ax6, 'on');
+% --- [新增 V11] 结束 ---
 
 
 fprintf('所有仿真和绘图任务完成。\n');
