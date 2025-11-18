@@ -1,18 +1,25 @@
+% AC_main_stateful_aggregation.m
+% 这是一个重构版本，实现了大论文中 2.4.1 节的
+% "面向SOC状态一致" 的聚合与指令分解仿真。
+% (基于 AC_main.m 和 ac_simulation_block.m 重构)
 
 clear; close all; clc;
-tic;
+
+tic; % 启动一个总计时器
 
 %% 1. 系统初始化
-rng(2023, 'Threefry');
-T_total = 24; dt = 5/60; % 5分钟步长
-time_points = 0:dt:T_total;
+rng(2023, 'Threefry'); % 固定随机种子
+T_total = 24; % 总时长（小时）
+dt = 5/60;    % 时间分辨率（小时）
+time_points = 0:dt:T_total; % 仿真时间点
 T_steps_total = length(time_points);
 steps_per_hour = round(1/dt);
 num_hours = floor(T_steps_total / steps_per_hour);
-base_price = 30;
+
+base_price = 30; % 基础电价（元/kWh）
 
 %% 2. 初始化 AC 参数
-acFile = 'AC_template.xlsx';
+acFile = 'AC_template2.xlsx'; % 确保 AC_template1.xlsx 在路径中
 fprintf('正在初始化空调参数...\n');
 try
     % 依赖 1initialize/initializeACsFromExcel.m
@@ -46,10 +53,10 @@ fprintf('\n== 仿真价格场景 (Price: %.1f 元) ==\n', current_p);
 fprintf('  Step 4.1: 预计算单体参数...\n');
 temp_ACs = ACs;
 
-% --- [V10 修正] ---
+% --- [V11 用户请求修改] ---
 % 1. 找到所有空调中的最高Tset
 max_Tset_all = max([ACs.Tset_original]);
-fprintf('  [V10 修正] 检测到最高 Tset 为: %.2f C\n', max_Tset_all);
+fprintf('  [V11 修正] 检测到最高 Tset 为: %.2f C\n', max_Tset_all);
 
 % 2. 定义 T_ja 曲线参数，确保 T_ja > max_Tset_all
 T_ja_min_ambient = max_Tset_all + 0.1; % 保证夜间 T_ja 至少比 Tset 高 0.1 度
@@ -58,10 +65,33 @@ T_ja_peak_ambient = max_Tset_all + 6.0; % 白天峰值高 6 度
 T_ja_mean = (T_ja_min_ambient + T_ja_peak_ambient) / 2;
 T_ja_amplitude = (T_ja_peak_ambient - T_ja_min_ambient) / 2;
 
-% 3. 生成统一的、峰值在15:00的 T_ja 曲线 (1 x T_steps)
-base_ambient_temp_unified = T_ja_mean + T_ja_amplitude * cos(2*pi*(time_points - 15)/24);
-fprintf('  [V10 修正] 生成统一 T_ja 曲线: 峰值=%.2f C (15:00), 谷值=%.2f C (03:00)\n', max(base_ambient_temp_unified), min(base_ambient_temp_unified));
-% --- [V10 修正] 结束 ---
+% 3. 生成基准趋势 (Trend)，峰值在中午 15：00
+base_trend = T_ja_mean + T_ja_amplitude * cos(2*pi*(time_points - 15)/24); % 峰值在 15:00
+
+% 4. 生成波动 (Fluctuations)
+% 使用 2 小时窗口的移动平均
+window_size = 2 * steps_per_hour; 
+% 确保噪声序列足够长，以避免 movmean 边缘效应
+noise_padding = ceil(window_size / 2);
+white_noise = randn(1, T_steps_total + 2 * noise_padding);
+fluctuations_raw = movmean(white_noise, window_size);
+% 截取与 time_points 相同长度的波动部分
+fluctuations_centered = fluctuations_raw(noise_padding + 1 : noise_padding + T_steps_total);
+
+% 5. 缩放波动
+fluctuation_scale = T_ja_amplitude * 0.2; % 波动幅度设为基准振幅的 20%
+% (标准化并缩放)
+scaled_fluctuations = (fluctuations_centered / std(fluctuations_centered, 'omitnan')) * fluctuation_scale;
+
+% 6. 合并并强制执行约束
+base_ambient_temp_unified = base_trend + scaled_fluctuations;
+
+% 确保 T_ja 始终大于 T_ja_min_ambient (即 max_Tset_all + 0.1)
+base_ambient_temp_unified = max(base_ambient_temp_unified, T_ja_min_ambient); 
+
+fprintf('  [V11 修正] 生成带波动的 T_ja 曲线: 峰值 approx %.2f C (中午12:00附近), 谷值 > %.2f C\n', max(base_ambient_temp_unified), T_ja_min_ambient);
+% --- [V11 用户请求修改] 结束 ---
+
 
 parfor i = 1:num_AC
     % 依赖 5userUncertainties/calculateParticipation.m
@@ -76,10 +106,10 @@ parfor i = 1:num_AC
         temp_ACs(i).Tmin = temp_ACs(i).Tset_original - deltaT_flex_magnitude;
     end
 
-    % --- [V10 修正] ---
+    % --- [V11 修正] ---
     % 4. 将统一的 T_ja 分配给所有空调
     temp_ACs(i).T_ja = base_ambient_temp_unified;
-    % --- [V10 修正] 结束 ---
+    % --- [V11 修正] 结束 ---
 
     % 依赖 2AC/calculateACABC_single.m
     [alpha, beta, gamma] = calculateACABC_single(...
