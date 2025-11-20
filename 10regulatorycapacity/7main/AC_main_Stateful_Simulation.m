@@ -96,10 +96,14 @@ AggParams = calculateAggregatedACParams(ACs_participating);
 fprintf('  聚合参数: A=%.4f, B=%.4f, C=%.4f\n', AggParams.A, AggParams.B, AggParams.C);
 
 % 提取矩阵用于后续计算
-T_ja_matrix = cat(1, ACs_participating.T_ja)';
-Tset_matrix = repmat([ACs_participating.Tset_original]', T_steps_total, 1);
-R_matrix = repmat([ACs_participating.R]', T_steps_total, 1);
-eta_matrix = repmat([ACs_participating.eta]', T_steps_total, 1);
+% [修正]: 确保 T_ja_matrix 是 [T_steps, num_AC_p]
+T_ja_matrix = cat(1, ACs_participating.T_ja)'; 
+
+% [修正]: 确保这里的 repmat 生成 [T_steps, num_AC_p]
+% 注意：[ACs...].Tset_original 得到行向量 [1, N]，repmat(..., T, 1) 得到 [T, N]
+Tset_matrix = repmat([ACs_participating.Tset_original], T_steps_total, 1);
+R_matrix = repmat([ACs_participating.R], T_steps_total, 1);
+eta_matrix = repmat([ACs_participating.eta], T_steps_total, 1);
 
 % 4.3 生成电网指令
 fprintf('  4.3 生成电网调节指令...\n');
@@ -198,12 +202,19 @@ for t_idx = 1:T_steps_total
 end
 fprintf('  仿真完成。\n');
 
-% 数据后处理
-Tmax_mat = repmat([ACs_participating.Tmax]', T_steps_total, 1);
-Tmin_mat = repmat([ACs_participating.Tmin]', T_steps_total, 1);
+% --- 数据后处理与维度修正 ---
+
+% [修正点]：Tmax_mat 的维度生成
+% ACs_participating.Tmax 是标量或，[ACs_participating.Tmax] 构成行向量 [1, N]
+% repmat( [1, N], T, 1 ) -> [T, N]，与 Individual_SOC_History 维度一致
+Tmax_mat = repmat([ACs_participating.Tmax], T_steps_total, 1);
+Tmin_mat = repmat([ACs_participating.Tmin], T_steps_total, 1);
+
+% 计算反推温度
 Individual_Temp_History = Tmax_mat - Individual_SOC_History .* (Tmax_mat - Tmin_mat);
 
 P_standby = 0.05;
+% Baseline_Power_History 也是 [T, N]
 Baseline_Power_History = (T_ja_matrix - Tset_matrix) ./ (R_matrix .* eta_matrix);
 Total_Power_History = Baseline_Power_History + Individual_Power_History;
 Total_Power_History(Total_Power_History < P_standby) = P_standby;
