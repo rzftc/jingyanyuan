@@ -172,6 +172,11 @@ Agg_Model_Potential_Up_History = zeros(T_steps_total, 1);   % 基于A,B,C计算�
 Agg_Model_Potential_Down_History = zeros(T_steps_total, 1);
 % --- [新增 V12] 结束 ---
 
+% --- [新增] 个体潜力存储 (用于保存到 MAT) ---
+AC_Up_Individual = zeros(num_AC_participating, T_steps_total);
+AC_Down_Individual = zeros(num_AC_participating, T_steps_total);
+% --- [新增] 结束 ---
+
 fprintf('  Step 5: 开始 %d 步的状态化仿真...\n', T_steps_total);
 
 for t_idx = 1:T_steps_total
@@ -195,6 +200,10 @@ for t_idx = 1:T_steps_total
     temp_P_base_agg = 0; % 新增：用于聚合模型约束的基线功率总和
     temp_SOC_for_next_step = zeros(num_AC_participating, 1);
     temp_P_achieved_this_step = zeros(num_AC_participating, 1);
+    
+    % [新增] 临时个体潜力变量
+    temp_AC_Up_Ind = zeros(num_AC_participating, 1);
+    temp_AC_Down_Ind = zeros(num_AC_participating, 1);
 
     % 5. 【核心】状态转移 (parfor)
     parfor i = 1:num_AC_participating
@@ -214,6 +223,10 @@ for t_idx = 1:T_steps_total
 
         temp_AC_Up_agg = temp_AC_Up_agg + P_plus;
         temp_AC_Down_agg = temp_AC_Down_agg + P_minus;
+        
+        % [新增] 记录个体潜力
+        temp_AC_Up_Ind(i) = P_plus;
+        temp_AC_Down_Ind(i) = P_minus;
 
         % B. 反解理论功率 ΔP_j (流程图 步骤6)
         delta_Pj_theory = 0;
@@ -235,6 +248,10 @@ for t_idx = 1:T_steps_total
     % 6. 存储当前时间步 t 的单体累加潜力
     Agg_P_Potential_Up_History(t_idx) = temp_AC_Up_agg;
     Agg_P_Potential_Down_History(t_idx) = temp_AC_Down_agg;
+    
+    % [新增] 存储个体潜力到大矩阵
+    AC_Up_Individual(:, t_idx) = temp_AC_Up_Ind;
+    AC_Down_Individual(:, t_idx) = temp_AC_Down_Ind;
     
     % --- [修正 V12] 计算聚合模型理论潜力 (与单体逻辑对齐) ---
     % 1. 能量约束: (S_target - A*S - C) / (B * dt)
@@ -311,6 +328,29 @@ Agg_Total_Power = sum(Total_Power_History, 2);
 fprintf('  Step 5.7: 聚合完成。\n');
 % --- [新增 V11] 结束 ---
 
+% --- [新增 V13] 步骤 5.8: 保存数据到 MAT 文件 ---
+fprintf('  Step 5.8: 正在保存仿真数据到 MAT 文件...\n');
+
+results = struct();
+results.dt = dt;
+results.time_points_absolute = time_points; % 对应目标格式的 time_points_absolute
+
+% 聚合数据
+results.AC_Up = Agg_P_Potential_Up_History;
+results.AC_Down = Agg_P_Potential_Down_History;
+
+% 个体数据
+% 注意：Individual_SOC_History 维度为 [T, N]，需要转置为 [N, T] 以匹配目标格式
+results.SOC_AC = Individual_SOC_History'; 
+% AC_Up_Individual 和 AC_Down_Individual 已经是 [N, T] 格式
+results.AC_Up_Individual = AC_Up_Individual;
+results.AC_Down_Individual = AC_Down_Individual;
+
+% 保存文件
+output_mat_name = 'AC_Stateful_Simulation_Results.mat';
+save(output_mat_name, 'results', '-v7.3');
+fprintf('  数据已保存至: %s\n', output_mat_name);
+% --- [新增 V13] 结束 ---
 
 %% 6. 绘图 (实现用户要求)
 fprintf('Step 6: 正在生成对比图...\n');
