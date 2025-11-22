@@ -1,10 +1,3 @@
-% AC_main_Stateful_Sim_potential.m
-% 这是一个重构版本，实现了大论文中 2.4.1 节的
-% "面向SOC状态一致" 的聚合与指令分解仿真。
-% (基于 AC_main.m 和 ac_simulation_block.m 重构)
-%
-% [本次修改]: 批量运行 0-50 元的 10 个价格场景，并分别保存结果。
-
 clear; close all; clc;
 
 tic; % 启动一个总计时器
@@ -52,7 +45,7 @@ p_min = 15; p_max = 50; p_min_prime = 10; p_max_prime = 40; T_set_max = 3;
 price_list = linspace(0, 50, 10);
 num_prices = length(price_list);
 % --- [新增] 创建结果保存文件夹 ---
-output_dir = 'results_AC'; % 定义文件夹名称
+output_dir = 'data/results_AC'; % 定义文件夹名称
 if ~exist(output_dir, 'dir')
     mkdir(output_dir);
 end
