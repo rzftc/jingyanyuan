@@ -328,230 +328,39 @@ Agg_Total_Power = sum(Total_Power_History, 2);
 fprintf('  Step 5.7: 聚合完成。\n');
 % --- [新增 V11] 结束 ---
 
-% --- [新增 V13] 步骤 5.8: 保存数据到 MAT 文件 ---
-fprintf('  Step 5.8: 正在保存仿真数据到 MAT 文件...\n');
+% --- [Step 5.8 修改版]：保存完整仿真数据到 MAT 文件 ---
+fprintf('  Step 5.8: 正在保存完整仿真数据到 MAT 文件...\n');
 
 results = struct();
 results.dt = dt;
-results.time_points_absolute = time_points; % 对应目标格式的 time_points_absolute
+results.time_points = time_points; % 保存时间轴
 
-% 聚合数据
-results.AC_Up = Agg_P_Potential_Up_History;
-results.AC_Down = Agg_P_Potential_Down_History;
+% 1. 聚合潜力数据
+results.Agg_P_Potential_Up_History = Agg_P_Potential_Up_History;     % 单体累加上调
+results.Agg_P_Potential_Down_History = Agg_P_Potential_Down_History; % 单体累加下调
+results.Agg_Model_Potential_Up_History = Agg_Model_Potential_Up_History;     % 聚合模型上调
+results.Agg_Model_Potential_Down_History = Agg_Model_Potential_Down_History; % 聚合模型下调
 
-% 个体数据
-% 注意：Individual_SOC_History 维度为 [T, N]，需要转置为 [N, T] 以匹配目标格式
-results.SOC_AC = Individual_SOC_History'; 
-% AC_Up_Individual 和 AC_Down_Individual 已经是 [N, T] 格式
+% 2. 功率跟踪数据
+results.Agg_P_Command_History = Agg_P_Command_History;   % 电网指令
+results.Agg_P_Achieved_History = Agg_P_Achieved_History; % 响应功率
+
+% 3. 功率分析数据
+results.Agg_Baseline_Power = Agg_Baseline_Power; % 聚合基线功率
+results.Agg_Total_Power = Agg_Total_Power;       % 聚合总制冷功率
+results.Total_Power_History = Total_Power_History; % 单体总制冷功率 (用于图5)
+results.Individual_Power_History = Individual_Power_History; % 单体调节功率 (用于图4)
+
+% 4. 状态与温度数据
+% 注意：转置保存以保持与其他脚本兼容性 (N x T)
+results.Individual_SOC_History_Transposed = Individual_SOC_History'; 
+results.Individual_Temp_History_Transposed = Individual_Temp_History';
+
+% 5. 其他个体数据 (可选，用于其他分析)
 results.AC_Up_Individual = AC_Up_Individual;
 results.AC_Down_Individual = AC_Down_Individual;
 
 % 保存文件
 output_mat_name = 'AC_Stateful_Simulation_Results.mat';
 save(output_mat_name, 'results', '-v7.3');
-fprintf('  数据已保存至: %s\n', output_mat_name);
-% --- [新增 V13] 结束 ---
-
-%% 6. 绘图 (实现用户要求)
-fprintf('Step 6: 正在生成对比图...\n');
-
-% --- 图 1: 功率跟踪对比 ---
-figure('Name', '功率跟踪对比 (理论分解)', 'Position', [100 100 1000 450]);
-ax1 = axes;
-hold(ax1, 'on');
-plot(ax1, time_points, Agg_P_Command_History, 'k:', 'LineWidth', 2.5, ...
-    'DisplayName', '电网调节指令 (ΔP_s)');
-plot(ax1, time_points, Agg_P_Achieved_History, 'r-', 'LineWidth', 1.5, ...
-    'DisplayName', '各空调的响应功率之和 (ΣΔP_j)');
-hold(ax1, 'off');
-xlabel(ax1, '时间 (小时)', 'FontSize', 12);
-ylabel(ax1, '聚合功率 (kW)', 'FontSize', 12);
-title(ax1, '图1：空调聚合响应功率 vs 电网指令', 'FontSize', 14);
-legend(ax1, 'show', 'Location', 'best');
-set(ax1, 'FontSize', 11);
-xticks(ax1, [0, 6, 12, 18, 24]);
-xticklabels(ax1, {'00:00', '06:00', '12:00', '18:00', '24:00'});
-xlim(ax1, [0, 24]);
-grid(ax1, 'on');
-
-
-% --- 图 2: SOC状态对比 (多曲线) ---
-figure('Name', 'SOC状态对比 (多曲线)', 'Position', [100 550 1000 450]);
-ax2 = axes;
-hold(ax2, 'on');
-h_individual = plot(ax2, time_points, Individual_SOC_History, 'LineWidth', 0.5);
-h_agg = plot(ax2, time_points, Agg_SOC_History, 'k--', 'LineWidth', 3, ...
-    'DisplayName', '空调聚合模型的SOC (均值)');
-if num_AC_participating > 0
-    set(h_individual(1), 'DisplayName', '单体空调的SOC');
-end
-if num_AC_participating > 1
-    set(h_individual(2:end), 'HandleVisibility', 'off');
-end
-hold(ax2, 'off');
-xlabel(ax2, '时间 (小时)', 'FontSize', 12);
-ylabel(ax2, '空调SOC', 'FontSize', 12);
-title(ax2, '图2：单体空调SOC 与 聚合模型SOC 对比 (多曲线)', 'FontSize', 14);
-if num_AC_participating > 0
-    legend(ax2, [h_agg, h_individual(1)], 'Location', 'best', 'FontSize', 11);
-else
-    legend(ax2, h_agg, 'Location', 'best', 'FontSize', 11);
-end
-set(ax2, 'FontSize', 11);
-xticks(ax2, [0, 6, 12, 18, 24]);
-xticklabels(ax2, {'00:00', '06:00', '12:00', '18:00', '24:00'});
-xlim(ax2, [0, 24]);
-ylim(ax2, [-0.1, 1.1]);
-grid(ax2, 'on');
-
-% --- 图 3: 室内温度变化 (反推) ---
-figure('Name', '室内温度变化 (反推)', 'Position', [100 300 1000 450]);
-ax3 = axes;
-hold(ax3, 'on');
-h_temp_individual = plot(ax3, time_points, Individual_Temp_History, 'LineWidth', 0.5);
-h_tmax_avg = plot(ax3, time_points, mean(Tmax_matrix_p, 2), 'r--', 'LineWidth', 2, 'DisplayName', '平均 Tmax');
-h_tmin_avg = plot(ax3, time_points, mean(Tmin_matrix_p, 2), 'b--', 'LineWidth', 2, 'DisplayName', '平均 Tmin');
-legend_handles = [h_tmax_avg, h_tmin_avg];
-if num_AC_participating > 0
-    set(h_temp_individual(1), 'DisplayName', '单体空调温度 (反推)');
-    legend_handles = [h_temp_individual(1), h_tmax_avg, h_tmin_avg];
-end
-if num_AC_participating > 1
-    set(h_temp_individual(2:end), 'HandleVisibility', 'off');
-end
-hold(ax3, 'off');
-xlabel(ax3, '时间 (小时)', 'FontSize', 12);
-ylabel(ax3, '室内温度 (°C)', 'FontSize', 12);
-title(ax3, '图3：单体空调室内温度变化 (基于SOC反推)', 'FontSize', 14);
-legend(ax3, legend_handles, 'Location', 'best', 'FontSize', 11);
-set(ax3, 'FontSize', 11);
-xticks(ax3, [0, 6, 12, 18, 24]);
-xticklabels(ax3, {'00:00', '06:00', '12:00', '18:00', '24:00'});
-xlim(ax3, [0, 24]);
-grid(ax3, 'on');
-
-% --- 图 4: 单体空调(调节)功率 ---
-figure('Name', '单体空调调节功率曲线', 'Position', [100 400 1000 450]);
-ax4 = axes;
-hold(ax4, 'on');
-h_power_individual = plot(ax4, time_points, Individual_Power_History, 'LineWidth', 0.5);
-h_zero_line = yline(ax4, 0, 'k--', 'LineWidth', 2, 'DisplayName', '0 kW 参考线');
-legend_handles_pwr = [h_zero_line];
-if num_AC_participating > 0
-    set(h_power_individual(1), 'DisplayName', '单体空调调节功率 (ΔP_j)');
-    legend_handles_pwr = [h_power_individual(1), h_zero_line];
-end
-if num_AC_participating > 1
-    set(h_power_individual(2:end), 'HandleVisibility', 'off');
-end
-hold(ax4, 'off');
-xlabel(ax4, '时间 (小时)', 'FontSize', 12);
-ylabel(ax4, '单体调节功率 (kW)', 'FontSize', 12);
-title(ax4, '图4：单体空调实际调节功率 (ΔP_j) 变化', 'FontSize', 14);
-legend(ax4, legend_handles_pwr, 'Location', 'best', 'FontSize', 11);
-set(ax4, 'FontSize', 11);
-xticks(ax4, [0, 6, 12, 18, 24]);
-xticklabels(ax4, {'00:00', '06:00', '12:00', '18:00', '24:00'});
-xlim(ax4, [0, 24]);
-grid(ax4, 'on');
-
-% --- [V10] 图 5: 单体空调总制冷功率 (P_base + Delta_P) ---
-figure('Name', '单体空调总制冷功率', 'Position', [100 500 1000 450]);
-ax5 = axes;
-hold(ax5, 'on');
-
-% [V10 修改] 绘制 Total_Power_History
-h_total_power_individual = plot(ax5, time_points, Total_Power_History, 'LineWidth', 0.5);
-
-h_standby_line = yline(ax5, P_standby, 'k--', 'LineWidth', 2, 'DisplayName', '最小待机功率');
-
-% 图例管理
-legend_handles_total_pwr = [h_standby_line];
-if num_AC_participating > 0
-    set(h_total_power_individual(1), 'DisplayName', '单体总制冷功率 (P_total)');
-    legend_handles_total_pwr = [h_total_power_individual(1), h_standby_line];
-end
-if num_AC_participating > 1
-    set(h_total_power_individual(2:end), 'HandleVisibility', 'off');
-end
-
-hold(ax5, 'off');
-
-% 格式化
-xlabel(ax5, '时间 (小时)', 'FontSize', 12);
-ylabel(ax5, '单体总制冷功率 (kW)', 'FontSize', 12);
-title(ax5, '图5 (V10)：单体空调总制冷功率 (P_{base} + ΔP_j) 变化', 'FontSize', 14);
-
-legend(ax5, legend_handles_total_pwr, 'Location', 'best', 'FontSize', 11);
-
-set(ax5, 'FontSize', 11);
-xticks(ax5, [0, 6, 12, 18, 24]);
-xticklabels(ax5, {'00:00', '06:00', '12:00', '18:00', '24:00'});
-xlim(ax5, [0, 24]);
-grid(ax5, 'on');
-% --- [V10] 结束 ---
-
-% --- [新增 V11] 图 6: 聚合基线功率 vs 聚合总制冷功率 ---
-figure('Name', '聚合功率对比', 'Position', [100 600 1000 450]);
-ax6 = axes;
-hold(ax6, 'on');
-
-% 1. 绘制聚合基线功率之和
-plot(ax6, time_points, Agg_Baseline_Power, 'b--', 'LineWidth', 2, ...
-    'DisplayName', '所有AC的基线功率之和 (ΣP_{base})');
-
-% 2. 绘制聚合总制冷功率之和
-plot(ax6, time_points, Agg_Total_Power, 'r-', 'LineWidth', 2, ...
-    'DisplayName', '所有AC的总制冷功率之和 (ΣP_{total})');
-
-hold(ax6, 'off');
-
-% 3. 格式化
-xlabel(ax6, '时间 (小时)', 'FontSize', 12);
-ylabel(ax6, '聚合功率 (kW)', 'FontSize', 12);
-title(ax6, '图6：聚合基线功率 vs 聚合总制冷功率', 'FontSize', 14);
-legend(ax6, 'show', 'Location', 'best', 'FontSize', 11);
-
-set(ax6, 'FontSize', 11);
-xticks(ax6, [0, 6, 12, 18, 24]);
-xticklabels(ax6, {'00:00', '06:00', '12:00', '18:00', '24:00'});
-xlim(ax6, [0, 24]);
-grid(ax6, 'on');
-% --- [新增 V11] 结束 ---
-
-
-% --- [新增 V12] 图 7: 聚合潜力对比 (单体累加 vs 聚合模型计算) ---
-figure('Name', '聚合潜力对比', 'Position', [100 700 1000 450]);
-ax7 = axes;
-hold(ax7, 'on');
-
-% 1. 绘制单体累加的潜力 (实线)
-plot(ax7, time_points, Agg_P_Potential_Up_History, 'b-', 'LineWidth', 1.5, ...
-    'DisplayName', '单体累加的上调潜力 (ΣP_{+,j})');
-plot(ax7, time_points, Agg_P_Potential_Down_History, 'r-', 'LineWidth', 1.5, ...
-    'DisplayName', '单体累加的下调潜力 (ΣP_{-,j})');
-
-% 2. 绘制聚合模型计算的潜力 (虚线/点线)
-plot(ax7, time_points, Agg_Model_Potential_Up_History, 'b--', 'LineWidth', 2, ...
-    'DisplayName', '聚合模型计算的上调潜力 (P_{+,agg})');
-plot(ax7, time_points, Agg_Model_Potential_Down_History, 'r--', 'LineWidth', 2, ...
-    'DisplayName', '聚合模型计算的下调潜力 (P_{-,agg})');
-
-hold(ax7, 'off');
-
-% 3. 格式化
-xlabel(ax7, '时间 (小时)', 'FontSize', 12);
-ylabel(ax7, '调节潜力 (kW)', 'FontSize', 12);
-title(ax7, '图7：调节潜力对比 (单体累加 vs 聚合模型计算)', 'FontSize', 14);
-legend(ax7, 'show', 'Location', 'best', 'FontSize', 11);
-
-set(ax7, 'FontSize', 11);
-xticks(ax7, [0, 6, 12, 18, 24]);
-xticklabels(ax7, {'00:00', '06:00', '12:00', '18:00', '24:00'});
-xlim(ax7, [0, 24]);
-grid(ax7, 'on');
-% --- [新增 V12] 结束 ---
-
-
-fprintf('所有仿真和绘图任务完成。\n');
-toc;
+fprintf('  完整数据已保存至: %s\n', output_mat_name);
