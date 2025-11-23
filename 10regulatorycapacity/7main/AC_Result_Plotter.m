@@ -205,7 +205,7 @@ end
 
 %% === 第二部分：批量结果绘图 (不同电价下的聚合制冷功率) ===
 
-results_dir = 'results_AC';
+results_dir = 'data/results_AC';
 fprintf('\n------------------------------------------------------\n');
 fprintf('检查批量仿真文件夹 "%s" ...\n', results_dir);
 
@@ -274,7 +274,7 @@ if exist(results_dir, 'dir')
             for i = 1:length(data_list)
                 plot(data_list(i).time_points, data_list(i).total_power, ...
                     'LineWidth', 1.5, 'Color', colors_multi(i,:));
-                legend_str{end+1} = sprintf('电价 = %.1f 元', data_list(i).price);
+                legend_str{end+1} = sprintf('激励电价 = %.1f 分/kW', data_list(i).price);
             end
             
             hold off;
