@@ -2,11 +2,10 @@
 clear; close all; clc;
 
 tic; % 启动一个总计时器
-
 %% 1. 系统初始化
 rng(2023, 'Threefry'); % 固定随机种子
 T_total = 24; % 总时长（小时）
-dt = 60/60;    % 时间分辨率（小时）
+dt = 5/60;    % 时间分辨率（小时）
 time_points = 0:dt:T_total; % 仿真时间点
 T_steps_total = length(time_points);
 steps_per_hour = round(1/dt);
@@ -357,6 +356,6 @@ results.AC_Up_Individual = AC_Up_Individual;
 results.AC_Down_Individual = AC_Down_Individual;
 
 % 保存文件
-output_mat_name = 'AC_Stateful_Simulation_Results_60min.mat';
+output_mat_name = 'AC_Stateful_Simulation_Results_5min.mat';
 save(output_mat_name, 'results', '-v7.3');
 fprintf('  完整数据已保存至: %s\n', output_mat_name);
