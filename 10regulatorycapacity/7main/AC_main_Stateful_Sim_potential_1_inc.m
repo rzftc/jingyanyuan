@@ -1,7 +1,3 @@
-% AC_main_stateful_aggregation.m
-% 这是一个重构版本，实现了大论文中 2.4.1 节的
-% "面向SOC状态一致" 的聚合与指令分解仿真。
-% (基于 AC_main.m 和 ac_simulation_block.m 重构)
 
 clear; close all; clc;
 
@@ -10,7 +6,7 @@ tic; % 启动一个总计时器
 %% 1. 系统初始化
 rng(2023, 'Threefry'); % 固定随机种子
 T_total = 24; % 总时长（小时）
-dt = 5/60;    % 时间分辨率（小时）
+dt = 60/60;    % 时间分辨率（小时）
 time_points = 0:dt:T_total; % 仿真时间点
 T_steps_total = length(time_points);
 steps_per_hour = round(1/dt);
@@ -361,6 +357,6 @@ results.AC_Up_Individual = AC_Up_Individual;
 results.AC_Down_Individual = AC_Down_Individual;
 
 % 保存文件
-output_mat_name = 'AC_Stateful_Simulation_Results.mat';
+output_mat_name = 'AC_Stateful_Simulation_Results_60min.mat';
 save(output_mat_name, 'results', '-v7.3');
 fprintf('  完整数据已保存至: %s\n', output_mat_name);
