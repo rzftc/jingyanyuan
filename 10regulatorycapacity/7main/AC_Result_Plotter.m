@@ -2,6 +2,7 @@
 % 功能：读取仿真结果并绘制高DPI、无标题、中文图例的分析图表
 %       1. 读取 AC_Stateful_Simulation_Results.mat (单次仿真)
 %       2. 读取 results_AC 文件夹下的批量结果 (不同电价)
+%       3. [新增] 读取不同 dt (5min, 15min, 60min) 的结果进行对比
 % 依赖：AC_main_Stateful_Sim_potential_diff_inc.m 生成的数据
 
 clear; close all; clc;
@@ -203,7 +204,7 @@ if has_single_result
     fprintf('单次仿真绘图完成。\n');
 end
 
-%% === 第二部分：批量结果绘图 (不同电价下的聚合制冷功率) ===
+%% === 第二部分：批量结果绘图 (不同电价下的结果对比) ===
 
 results_dir = 'data/results_AC';
 fprintf('\n------------------------------------------------------\n');
@@ -220,8 +221,8 @@ if exist(results_dir, 'dir')
     else
         fprintf('  发现 %d 个结果文件，开始读取...\n', length(mat_files));
         
-        % 数据容器
-        data_list = struct('price', {}, 'total_power', {}, 'time_points', {});
+        % 数据容器 (新增 up_potential, down_potential)
+        data_list = struct('price', {}, 'total_power', {}, 'up_potential', {}, 'down_potential', {}, 'time_points', {});
         
         for i = 1:length(mat_files)
             full_path = fullfile(mat_files(i).folder, mat_files(i).name);
@@ -230,20 +231,39 @@ if exist(results_dir, 'dir')
                 if isfield(temp_data, 'results')
                     res = temp_data.results;
                     
-                    % 获取价格 (优先从结构体)
+                    % 获取价格
                     p = NaN;
                     if isfield(res, 'current_price')
                         p = res.current_price;
                     else
-                        % 尝试从文件名解析
                         tokens = regexp(mat_files(i).name, 'Price_([\d\.]+).mat', 'tokens');
                         if ~isempty(tokens), p = str2double(tokens{1}{1}); end
                     end
                     
-                    % 获取聚合总功率
-                    if ~isnan(p) && isfield(res, 'Agg_Total_Power') && isfield(res, 'time_points')
+                    % 获取聚合数据 (总功率 + 上下调节潜力)
+                    if ~isnan(p) && isfield(res, 'time_points')
                         data_list(end+1).price = p;
-                        data_list(end).total_power = res.Agg_Total_Power;
+                        
+                        % 1. 总功率 (Agg_Total_Power)
+                        if isfield(res, 'Agg_Total_Power')
+                            data_list(end).total_power = res.Agg_Total_Power;
+                        else
+                            data_list(end).total_power = [];
+                        end
+                        
+                        % 2. 上调潜力 (Agg_P_Potential_Up_History)
+                        if isfield(res, 'Agg_P_Potential_Up_History')
+                            data_list(end).up_potential = res.Agg_P_Potential_Up_History;
+                        else
+                            data_list(end).up_potential = [];
+                        end
+                        
+                        % 3. 下调潜力 (Agg_P_Potential_Down_History)
+                        if isfield(res, 'Agg_P_Potential_Down_History')
+                            data_list(end).down_potential = res.Agg_P_Potential_Down_History;
+                        else
+                            data_list(end).down_potential = [];
+                        end
                         
                         % 兼容时间轴名称
                         if isfield(res, 'time_points')
@@ -263,38 +283,181 @@ if exist(results_dir, 'dir')
             [~, sort_idx] = sort([data_list.price]);
             data_list = data_list(sort_idx);
             
-            % 绘图: 聚合总制冷功率对比
-            figure('Position', [150 150 1000 600]);
-            hold on;
-            
             % 颜色映射 (蓝色 -> 红色)
             colors_multi = jet(length(data_list));
             
-            legend_str = {};
-            for i = 1:length(data_list)
-                plot(data_list(i).time_points, data_list(i).total_power, ...
-                    'LineWidth', 1.5, 'Color', colors_multi(i,:));
-                legend_str{end+1} = sprintf('激励电价 = %.1f 分/kW', data_list(i).price);
+            % --- [保留原图] 图 8: 聚合总制冷功率对比 ---
+            if ~isempty(data_list(1).total_power)
+                figure('Position', [150 150 1000 600]);
+                hold on;
+                legend_str = {};
+                for i = 1:length(data_list)
+                    if ~isempty(data_list(i).total_power)
+                        plot(data_list(i).time_points, data_list(i).total_power, ...
+                            'LineWidth', 1.5, 'Color', colors_multi(i,:));
+                        legend_str{end+1} = sprintf('激励电价 = %.1f 分/kW', data_list(i).price);
+                    end
+                end
+                hold off;
+                xlabel('时间 (小时)', 'FontSize', 12);
+                ylabel('聚合总制冷功率 (kW)', 'FontSize', 12);
+                legend(legend_str, 'Location', 'best', 'FontSize', 10);
+                grid on; set(gca, 'FontSize', 11); xlim([0, 24]);
+                print(gcf, '图8_不同电价下聚合制冷功率.png', '-dpng', '-r300');
+                fprintf('  已保存: 图8_不同电价下聚合制冷功率.png\n');
             end
-            
-            hold off;
-            xlabel('时间 (小时)', 'FontSize', 12);
-            ylabel('聚合总制冷功率 (kW)', 'FontSize', 12);
-            % 无标题
-            legend(legend_str, 'Location', 'bestoutside', 'FontSize', 10);
-            grid on;
-            set(gca, 'FontSize', 11);
-            xlim([0, 24]);
-            
-            % 保存
-            print(gcf, '图8_不同电价下聚合制冷功率.png', '-dpng', '-r300');
-            fprintf('  批量结果绘图完成: 图8_不同电价下聚合制冷功率.png\n');
+
+            % --- [新增] 图 9: 聚合上调潜力对比 ---
+            if ~isempty(data_list(1).up_potential)
+                figure('Position', [200 200 1000 600]);
+                hold on;
+                legend_str_up = {};
+                for i = 1:length(data_list)
+                    if ~isempty(data_list(i).up_potential)
+                        plot(data_list(i).time_points, data_list(i).up_potential, ...
+                            'LineWidth', 1.5, 'Color', colors_multi(i,:));
+                        legend_str_up{end+1} = sprintf('激励电价 = %.1f 分/kW', data_list(i).price);
+                    end
+                end
+                hold off;
+                xlabel('时间 (小时)', 'FontSize', 12);
+                ylabel('AC集群上调潜力 (kW)', 'FontSize', 12);
+                title('不同激励电价下的上调潜力');
+                legend(legend_str_up, 'Location', 'best', 'FontSize', 10);
+                grid on; set(gca, 'FontSize', 11); xlim([0, 24]);
+                print(gcf, '图9_不同电价下AC上调能力对比.png', '-dpng', '-r300');
+                fprintf('  已保存: 图9_不同电价下AC上调能力对比.png\n');
+            end
+
+            % --- [新增] 图 10: 聚合下调潜力对比 ---
+            if ~isempty(data_list(1).down_potential)
+                figure('Position', [250 250 1000 600]);
+                hold on;
+                legend_str_down = {};
+                for i = 1:length(data_list)
+                    if ~isempty(data_list(i).down_potential)
+                        plot(data_list(i).time_points, data_list(i).down_potential, ...
+                            'LineWidth', 1.5, 'Color', colors_multi(i,:));
+                        legend_str_down{end+1} = sprintf('激励电价 = %.1f 分/kW', data_list(i).price);
+                    end
+                end
+                hold off;
+                xlabel('时间 (小时)', 'FontSize', 12);
+                ylabel('AC集群下调潜力 (kW)', 'FontSize', 12);
+                title('不同激励电价下的下调潜力');
+                legend(legend_str_down, 'Location', 'best', 'FontSize', 10);
+                grid on; set(gca, 'FontSize', 11); xlim([0, 24]);
+                print(gcf, '图10_不同电价下AC下调能力对比.png', '-dpng', '-r300');
+                fprintf('  已保存: 图10_不同电价下AC下调能力对比.png\n');
+            end
+
         else
             fprintf('  未提取到有效的批量数据。\n');
         end
     end
 else
     fprintf('提示: 未找到文件夹 "%s"，跳过批量绘图。\n', results_dir);
+end
+%% === 第三部分：不同时间步长 (dt) 对比绘图 (新增) ===
+% 功能：加载 5min, 15min, 60min 的仿真结果并对比上下调节能力
+
+fprintf('\n------------------------------------------------------\n');
+fprintf('=== 开始执行不同时间步长 (dt) 对比绘图 ===\n');
+
+% 1. 定义文件和标签
+dt_files = {
+    'AC_Stateful_Simulation_Results_5min.mat', ...
+    'AC_Stateful_Simulation_Results_15min.mat', ...
+    'AC_Stateful_Simulation_Results_60min.mat'
+};
+dt_labels = {'5 min', '15 min', '60 min'};
+line_styles = {'-', '--', '-.'}; % 使用不同线型区分
+colors_dt = lines(3); % 使用 distinct 颜色
+
+% 2. 数据加载
+data_dt_list = struct('label', {}, 'up', {}, 'down', {}, 'time', {});
+valid_dt_count = 0;
+
+for i = 1:length(dt_files)
+    fname = dt_files{i};
+    if exist(fname, 'file')
+        fprintf('  加载文件: %s\n', fname);
+        try
+            tmp = load(fname);
+            if isfield(tmp, 'results')
+                res = tmp.results;
+                
+                % 检查必要字段
+                if isfield(res, 'Agg_P_Potential_Up_History') && isfield(res, 'Agg_P_Potential_Down_History')
+                    valid_dt_count = valid_dt_count + 1;
+                    data_dt_list(valid_dt_count).label = dt_labels{i};
+                    data_dt_list(valid_dt_count).up = res.Agg_P_Potential_Up_History;
+                    data_dt_list(valid_dt_count).down = res.Agg_P_Potential_Down_History;
+                    
+                    % 获取时间轴
+                    if isfield(res, 'time_points')
+                        data_dt_list(valid_dt_count).time = res.time_points;
+                    elseif isfield(res, 'time_points_absolute')
+                        data_dt_list(valid_dt_count).time = res.time_points_absolute;
+                    else
+                        % 如果没有时间轴，根据数据长度生成默认的
+                        len = length(res.Agg_P_Potential_Up_History);
+                        data_dt_list(valid_dt_count).time = linspace(0, 24, len);
+                    end
+                end
+            else
+                warning('文件 %s 中未找到 "results" 结构体。', fname);
+            end
+        catch
+            warning('读取文件 %s 失败。', fname);
+        end
+    else
+        fprintf('  [警告] 文件不存在: %s，已跳过。\n', fname);
+    end
+end
+
+if valid_dt_count > 0
+    % 3. 绘图：上调能力对比
+    figure('Name', 'AC集群不同dt上调能力对比', 'Position', [200 200 1000 500]);
+    hold on; grid on;
+    for i = 1:valid_dt_count
+        plot(data_dt_list(i).time, data_dt_list(i).up, ...
+            'LineWidth', 2.0, ...
+            'LineStyle', line_styles{i}, ...
+            'Color', colors_dt(i,:), ...
+            'DisplayName', ['dt = ' data_dt_list(i).label]);
+    end
+    hold off;
+    xlabel('时间 (小时)', 'FontSize', 14);
+    ylabel('AC集群上调潜力 (kW)', 'FontSize', 14);
+    
+    legend('show', 'Location', 'best', 'FontSize', 12);
+    set(gca, 'FontSize', 12);
+    xlim([0, 24]); 
+    print(gcf, '图9_AC_Cluster_Up_Comparison_dt.png', '-dpng', '-r300');
+    fprintf('  上调对比图已保存为: 图9_AC_Cluster_Up_Comparison_dt.png\n');
+    
+    % 4. 绘图：下调能力对比
+    figure('Name', 'AC集群不同dt下调能力对比', 'Position', [200 750 1000 500]);
+    hold on; grid on;
+    for i = 1:valid_dt_count
+        plot(data_dt_list(i).time, data_dt_list(i).down, ...
+            'LineWidth', 2.0, ...
+            'LineStyle', line_styles{i}, ...
+            'Color', colors_dt(i,:), ...
+            'DisplayName', ['dt = ' data_dt_list(i).label]);
+    end
+    hold off;
+    xlabel('时间 (小时)', 'FontSize', 14);
+    ylabel('AC集群下调潜力 (kW)', 'FontSize', 14);
+   
+    legend('show', 'Location', 'best', 'FontSize', 12);
+    set(gca, 'FontSize', 12);
+    xlim([0, 24]);
+    print(gcf, '图10_AC_Cluster_Down_Comparison_dt.png', '-dpng', '-r300');
+    fprintf('  下调对比图已保存为: 图10_AC_Cluster_Down_Comparison_dt.png\n');
+else
+    fprintf('  未加载到任何有效数据，无法绘制dt对比图。\n');
 end
 
 fprintf('\n所有绘图程序执行完毕。\n');
