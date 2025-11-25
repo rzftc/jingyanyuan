@@ -95,6 +95,7 @@ function [AC_Up_Sum, AC_Down_Sum, AC_Power_Sum] = run_AC_simulation(P_grid_comma
         if temp_ACs(i).ptcp
             temp_ACs(i).Tmax = temp_ACs(i).Tset_original + deltaT;
             temp_ACs(i).Tmin = temp_ACs(i).Tset_original - deltaT;
+            temp_ACs(i).Tset = rand(temp_ACs(i).Tmin,temp_ACs(i).Tmax);
         end
         temp_ACs(i).T_ja = base_ambient_temp_unified;
 
@@ -122,7 +123,7 @@ function [AC_Up_Sum, AC_Down_Sum, AC_Power_Sum] = run_AC_simulation(P_grid_comma
 
     % 4.3 准备 T_ja 矩阵用于计算总功率
     T_ja_matrix = repmat(base_ambient_temp_unified', 1, num_AC_participating); 
-    Tset_vec = [ACs_participating.Tset_original];
+    Tset_vec = [ACs_participating.Tset];
     R_vec = [ACs_participating.R];
     eta_vec = [ACs_participating.eta];
 
