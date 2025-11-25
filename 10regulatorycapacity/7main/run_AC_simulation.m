@@ -1,7 +1,9 @@
+
 function [AC_Up_Sum, AC_Down_Sum, AC_Power_Sum] = run_AC_simulation(P_grid_command_24)
     % run_AC_simulation
     % 输入:
-    %   P_grid_command_24: 24x1 的小时级电网调节指令 (kW)
+    %   P_grid_command_24: 24x1 的小时级电网**绝对功率**指令 (kW)
+    %                      (注意：此处修改为接收绝对功率，而非调节偏差)
     % 输出:
     %   AC_Up_Sum:    (T_steps_total x 1) 所有单体上调潜力之和
     %   AC_Down_Sum:  (T_steps_total x 1) 所有单体下调潜力之和
@@ -15,27 +17,21 @@ function [AC_Up_Sum, AC_Down_Sum, AC_Power_Sum] = run_AC_simulation(P_grid_comma
     T_steps_total = length(time_points);
     steps_per_hour = round(1/dt);
     
-    % === [关键修改]：处理电网指令维度 (24 -> T_steps_total) ===
-    % 检查输入是否为空或维度不对，给予默认处理或报错
+    % === 处理电网指令维度 (24 -> T_steps_total) ===
+    % 检查输入是否为空或维度不对
     if length(P_grid_command_24) ~= 24
          warning('输入指令长度为 %d，期望为 24。正在尝试自动适配...', length(P_grid_command_24));
-         % 这里可以添加插值逻辑，或者简单地通过 repelem 扩展
     end
     
     % 将小时级指令扩展到分钟级
-    % 假设 steps_per_hour = 12 (60/5)
     P_grid_command_series = repelem(P_grid_command_24, steps_per_hour);
     
-    % 维度对齐：time_points 通常是 0:dt:24，长度为 24/dt + 1 (例如 289)
-    % repelem 生成的长度可能是 24*12 = 288
-    % 我们需要确保 P_grid_command_series 长度等于 T_steps_total
+    % 维度对齐
     current_len = length(P_grid_command_series);
     if current_len < T_steps_total
-        % 补齐最后时刻的值
         padding = repmat(P_grid_command_series(end), T_steps_total - current_len, 1);
         P_grid_command_series = [P_grid_command_series(:); padding];
     elseif current_len > T_steps_total
-        % 截断
         P_grid_command_series = P_grid_command_series(1:T_steps_total);
     end
     % ========================================================
@@ -47,7 +43,6 @@ function [AC_Up_Sum, AC_Down_Sum, AC_Power_Sum] = run_AC_simulation(P_grid_comma
     try
         ACs = initializeACsFromExcel(acFile);
     catch ME
-        % 如果找不到文件，尝试生成或报错
         error('初始化 AC 失败: %s', ME.message);
     end
     num_AC = length(ACs);
@@ -70,7 +65,7 @@ function [AC_Up_Sum, AC_Down_Sum, AC_Power_Sum] = run_AC_simulation(P_grid_comma
     temp_ACs = ACs;
     max_Tset_all = max([ACs.Tset_original]);
     
-    % T_ja 生成逻辑 (保留原代码逻辑)
+    % T_ja 生成逻辑
     T_ja_min_ambient = max_Tset_all + 0.1; 
     T_ja_peak_ambient = max_Tset_all + 6.0; 
     T_ja_mean = (T_ja_min_ambient + T_ja_peak_ambient) / 2;
@@ -95,7 +90,7 @@ function [AC_Up_Sum, AC_Down_Sum, AC_Power_Sum] = run_AC_simulation(P_grid_comma
         if temp_ACs(i).ptcp
             temp_ACs(i).Tmax = temp_ACs(i).Tset_original + deltaT;
             temp_ACs(i).Tmin = temp_ACs(i).Tset_original - deltaT;
-            temp_ACs(i).Tset = rand(temp_ACs(i).Tmin,temp_ACs(i).Tmax);
+            temp_ACs(i).Tset = temp_ACs(i).Tmin + (temp_ACs(i).Tmax - temp_ACs(i).Tmin) * rand();
         end
         temp_ACs(i).T_ja = base_ambient_temp_unified;
 
@@ -116,12 +111,45 @@ function [AC_Up_Sum, AC_Down_Sum, AC_Power_Sum] = run_AC_simulation(P_grid_comma
         AC_Up_Sum = zeros(T_steps_total, 1); 
         AC_Down_Sum = zeros(T_steps_total, 1); 
         AC_Power_Sum = zeros(T_steps_total, 1);
+        warning('无 AC 参与，返回全零结果。');
         return;
     end
     
     AggParams = calculateAggregatedACParams(ACs_participating);
 
-    % 4.3 准备 T_ja 矩阵用于计算总功率
+    % === [关键修改]：预计算聚合基线功率 ===
+    % 目的：将输入的绝对功率指令 P_target 转换为调节指令 Delta_P
+    % 公式：P_base_i(t) = (T_ja(t) - Tset_i) / (R_i * eta_i)
+    % 聚合：P_base_agg(t) = sum(P_base_i(t))
+    % 向量化计算：P_base_agg(t) = T_ja(t) * K1 - K2
+    % 其中 K1 = sum(1/(R*eta)), K2 = sum(Tset/(R*eta))
+    
+    R_vec_p = [ACs_participating.R];
+    eta_vec_p = [ACs_participating.eta];
+    Tset_vec_p = [ACs_participating.Tset];
+    
+    % 避免除以零
+    valid_params = (R_vec_p > 1e-6) & (eta_vec_p > 1e-6);
+    if any(~valid_params)
+        warning('发现 %d 台 AC 参数异常(R或eta接近0)，已排除基线计算。', sum(~valid_params));
+        R_vec_p = R_vec_p(valid_params);
+        eta_vec_p = eta_vec_p(valid_params);
+        Tset_vec_p = Tset_vec_p(valid_params);
+    end
+    
+    term_common = 1 ./ (R_vec_p .* eta_vec_p);
+    K1 = sum(term_common);
+    K2 = sum(Tset_vec_p .* term_common);
+    
+    % 计算全时段聚合基线功率 (T_steps x 1)
+    Agg_Baseline_Power_Series = base_ambient_temp_unified(:) * K1 - K2;
+    % 确保基线功率非负 (物理约束)
+    Agg_Baseline_Power_Series = max(Agg_Baseline_Power_Series, 0);
+    
+    fprintf('  [INFO] 聚合基线功率范围: %.2f kW - %.2f kW\n', min(Agg_Baseline_Power_Series), max(Agg_Baseline_Power_Series));
+    % ==========================================
+
+    % 4.3 准备 T_ja 矩阵用于后续计算
     T_ja_matrix = repmat(base_ambient_temp_unified', 1, num_AC_participating); 
     Tset_vec = [ACs_participating.Tset];
     R_vec = [ACs_participating.R];
@@ -140,8 +168,13 @@ function [AC_Up_Sum, AC_Down_Sum, AC_Power_Sum] = run_AC_simulation(P_grid_comma
         % 1. 聚合状态
         SOC_agg_t = mean(CURRENT_SOC_AC, 'omitnan');
 
-        % 2. 获取指令 (直接从输入序列获取)
-        Delta_P_S_command = P_grid_command_series(t_idx);
+        % 2. 获取并转换指令
+        % 输入 P_grid_command_series 是绝对目标功率
+        P_target_abs = P_grid_command_series(t_idx);
+        P_base_curr = Agg_Baseline_Power_Series(t_idx);
+        
+        % === [核心逻辑] 计算功率差值 ===
+        Delta_P_S_command = P_target_abs - P_base_curr;
 
         % 3. 预测目标 SOC
         SOC_target_next = AggParams.A * SOC_agg_t + AggParams.B * Delta_P_S_command + AggParams.C;
@@ -157,7 +190,6 @@ function [AC_Up_Sum, AC_Down_Sum, AC_Power_Sum] = run_AC_simulation(P_grid_comma
             ac_i = ACs_participating(i);
             soc_curr = CURRENT_SOC_AC(i);
             
-            % T_ja_matrix(t_idx, i) 其实就是 base_ambient_temp_unified(t_idx)
             T_ja_val = base_ambient_temp_unified(t_idx);
 
             P_base_i = ACbaseP_single(T_ja_val, ac_i.Tset, ac_i.R, ac_i.eta);
@@ -169,7 +201,7 @@ function [AC_Up_Sum, AC_Down_Sum, AC_Power_Sum] = run_AC_simulation(P_grid_comma
             temp_AC_Up_agg = temp_AC_Up_agg + P_plus;
             temp_AC_Down_agg = temp_AC_Down_agg + P_minus;
 
-            % 反解指令
+            % 反解指令 (此时 Delta_Pj 是相对于基线的增量)
             delta_Pj = 0;
             if abs(ac_i.beta) > 1e-9
                 delta_Pj = (SOC_target_next - ac_i.alpha * soc_curr - ac_i.gamma) / ac_i.beta;
@@ -193,12 +225,12 @@ function [AC_Up_Sum, AC_Down_Sum, AC_Power_Sum] = run_AC_simulation(P_grid_comma
     % 计算总功率 (基线 + 调节)
     % 基线功率 = (T_ja - Tset) / (R * eta)
     % 注意维度: T_ja 是 (T x 1), Tset 是 (1 x N)
-    % 我们需要 (T x N)
     Baseline_Power = (repmat(base_ambient_temp_unified', 1, num_AC_participating) - repmat(Tset_vec, T_steps_total, 1)) ./ ...
                      (repmat(R_vec, T_steps_total, 1) .* repmat(eta_vec, T_steps_total, 1));
     
     Total_Power_Matrix = Baseline_Power + Individual_Power_History;
-    Total_Power_Matrix(Total_Power_Matrix < 0) = 0; % 物理约束
+    P_standby = 0.05;
+    Total_Power_Matrix(Total_Power_Matrix < P_standby) = P_standby; % 物理约束
     
     AC_Power_Sum = sum(Total_Power_Matrix, 2); % 按行求和，得到每个时间步的总功率
     
