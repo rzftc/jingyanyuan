@@ -1,4 +1,3 @@
-
 function [AC_Up_Sum, AC_Down_Sum, AC_Power_Sum] = run_AC_simulation(P_grid_command_24)
     % run_AC_simulation
     % 输入:

@@ -322,7 +322,7 @@ if exist(results_dir, 'dir')
                 hold off;
                 xlabel('时间 (小时)', 'FontSize', 12);
                 ylabel('AC集群上调潜力 (kW)', 'FontSize', 12);
-                title('不同激励电价下的上调潜力');
+
                 legend(legend_str_up, 'Location', 'best', 'FontSize', 10);
                 grid on; set(gca, 'FontSize', 11); xlim([0, 24]);
                 print(gcf, '图9_不同电价下AC上调能力对比.png', '-dpng', '-r300');
@@ -344,7 +344,7 @@ if exist(results_dir, 'dir')
                 hold off;
                 xlabel('时间 (小时)', 'FontSize', 12);
                 ylabel('AC集群下调潜力 (kW)', 'FontSize', 12);
-                title('不同激励电价下的下调潜力');
+   
                 legend(legend_str_down, 'Location', 'best', 'FontSize', 10);
                 grid on; set(gca, 'FontSize', 11); xlim([0, 24]);
                 print(gcf, '图10_不同电价下AC下调能力对比.png', '-dpng', '-r300');
