@@ -1,4 +1,4 @@
-function [AC_Up_Sum, AC_Down_Sum] = run_AC_simulation_MC(random_seed)
+function [AC_Up_Sum, AC_Down_Sum] = run_AC_simulation_MC(random_seed, acFileName)
     % run_AC_simulation_MC
     % 修改：强制系统按基线运行，不响应外部指令，以评估最大物理潜力。
     
@@ -15,7 +15,7 @@ function [AC_Up_Sum, AC_Down_Sum] = run_AC_simulation_MC(random_seed)
     base_price = 30; 
 
     %% 2. 初始化 AC 参数
-    acFile = 'AC_template2.xlsx';
+    acFile = acFileName;
     try
         ACs = initializeACsFromExcel(acFile);
     catch ME
