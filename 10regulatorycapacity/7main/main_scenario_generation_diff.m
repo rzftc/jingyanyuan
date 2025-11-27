@@ -24,7 +24,7 @@ base_ev_file = 'ini_data_mont/EV_Base_Fixed.xlsx';
 
 if ~exist(base_ev_file, 'file')
     % 生成 1000 辆 EV 的基准数据 (仅生成一次)
-    generateEVParameters_real_6am(base_ev_file, 1000, 0, 'AreaType', '居民区');
+    generateEVParameters_real_6am(base_ev_file, 2000, 0, 'AreaType', '居民区');
     fprintf('已生成 EV 基准文件 (物理参数将固定): %s\n', base_ev_file);
 else
     fprintf('使用现有 EV 基准文件: %s\n', base_ev_file);
@@ -153,18 +153,43 @@ save('reliable_regulation_domain.mat', ...
     'time_points', 'alpha', 'num_scenarios');
 fprintf('数据已保存。\n');
 
-%% ================= 6. 可视化 (保持不变) =================
+%% ================= 6. 可视化 =================
 figure('Name', '可靠调节域提取结果', 'Position', [100, 100, 1200, 800], 'Color', 'w');
+
+% 定义通用坐标轴设置
+x_ticks = [6, 12, 18, 24, 30];
+x_labels = {'06:00', '12:00', '18:00', '00:00 (次日)', '06:00 (次日)'};
+
+% --- 子图 1: 空调 (AC) ---
 subplot(2, 1, 1); hold on;
+% 绘制所有场景的背景（半透明）
 plot(time_points, Scenarios_AC_Up, 'Color', [0.6, 0.8, 1, 0.15], 'HandleVisibility', 'off');
 plot(time_points, Scenarios_AC_Down, 'Color', [1, 0.6, 0.6, 0.15], 'HandleVisibility', 'off');
+% 绘制可靠边界
 p1 = plot(time_points, Reliable_AC_Up, 'b-', 'LineWidth', 2, 'DisplayName', '可靠上调边界');
 p2 = plot(time_points, Reliable_AC_Down, 'r-', 'LineWidth', 2, 'DisplayName', '可靠下调边界');
-yline(0, 'k--'); title('空调 (AC) 聚合体可靠调节域'); legend([p1, p2], 'Location', 'best'); grid on; xlim([simulation_start_hour, simulation_end_hour]);
+yline(0, 'k--'); 
+title('空调 (AC) 聚合体可靠调节域'); 
+legend([p1, p2], 'Location', 'best'); 
+grid on;
+% 设置 X 轴
+xlim([simulation_start_hour, simulation_end_hour]);
+set(gca, 'XTick', x_ticks, 'XTickLabel', x_labels, 'FontSize', 12);
+xlabel('时间'); ylabel('功率 (kW)');
 
+% --- 子图 2: 电动汽车 (EV) ---
 subplot(2, 1, 2); hold on;
+% 绘制所有场景的背景（半透明）
 plot(time_points, Scenarios_EV_Up, 'Color', [0.6, 0.8, 1, 0.15], 'HandleVisibility', 'off');
 plot(time_points, Scenarios_EV_Down, 'Color', [1, 0.6, 0.6, 0.15], 'HandleVisibility', 'off');
+% 绘制可靠边界
 p3 = plot(time_points, Reliable_EV_Up, 'b-', 'LineWidth', 2, 'DisplayName', '可靠上调边界');
 p4 = plot(time_points, Reliable_EV_Down, 'r-', 'LineWidth', 2, 'DisplayName', '可靠下调边界');
-yline(0, 'k--'); title('电动汽车 (EV) 聚合体可靠调节域'); legend([p3, p4], 'Location', 'best'); grid on; xlim([simulation_start_hour, simulation_end_hour]);
+yline(0, 'k--'); 
+title('电动汽车 (EV) 聚合体可靠调节域'); 
+legend([p3, p4], 'Location', 'best'); 
+grid on;
+% 设置 X 轴
+xlim([simulation_start_hour, simulation_end_hour]);
+set(gca, 'XTick', x_ticks, 'XTickLabel', x_labels, 'FontSize', 12);
+xlabel('时间'); ylabel('功率 (kW)');

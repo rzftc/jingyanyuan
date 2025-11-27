@@ -41,7 +41,7 @@ function [AC_Up_Sum, AC_Down_Sum] = run_AC_simulation_MC(random_seed, acFileName
     
     % 环境温度生成
     T_ja_min_ambient = max_Tset_all + 0.1; 
-    T_ja_peak_ambient = max_Tset_all + 6.0; 
+    T_ja_peak_ambient = max_Tset_all + 3.0; 
     T_ja_mean = (T_ja_min_ambient + T_ja_peak_ambient) / 2;
     T_ja_amplitude = (T_ja_peak_ambient - T_ja_min_ambient) / 2;
     base_trend = T_ja_mean + T_ja_amplitude * cos(2*pi*(time_points - 15)/24); 
