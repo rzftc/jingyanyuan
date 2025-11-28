@@ -1,7 +1,7 @@
 clear; close all; clc;
 
 %% 1. 加载场景集与可靠调节域数据
-data_file = 'reliable_regulation_domain.mat';
+data_file = 'reliable_regulation_domain_1000.mat';
 if ~exist(data_file, 'file')
     error('未找到数据文件 %s，请先运行 main_scenario_generation_diff.m 生成场景数据。', data_file);
 end
