@@ -178,7 +178,7 @@ function generateExampleExcel_real_24(num_devices_ac, num_devices_ev, residentia
     if ~exist(saveDir, 'dir')
         mkdir(saveDir);
     end
-    ac_file = fullfile(saveDir, 'AC_template_mont.xlsx');
+    ac_file = fullfile(saveDir, 'AC_template_year.xlsx');
     ev_file = fullfile(saveDir, 'EV_template9.xlsx');
     % ===== 写入文件 =====
     writetable(struct2table(acData), ac_file);
