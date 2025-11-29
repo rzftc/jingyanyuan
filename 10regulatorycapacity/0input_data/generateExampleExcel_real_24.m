@@ -179,9 +179,9 @@ function generateExampleExcel_real_24(num_devices_ac, num_devices_ev, residentia
         mkdir(saveDir);
     end
     ac_file = fullfile(saveDir, 'AC_template_year.xlsx');
-    ev_file = fullfile(saveDir, 'EV_template9.xlsx');
+    % ev_file = fullfile(saveDir, 'EV_template9.xlsx');
     % ===== 写入文件 =====
     writetable(struct2table(acData), ac_file);
-    writetable(struct2table(evData), ev_file);
-    disp('数据文件已生成: AC_template_mont.xlsx 和 EV_template9.xlsx');
+    % writetable(struct2table(evData), ev_file);
+    % disp('数据文件已生成: AC_template_mont.xlsx 和 EV_template9.xlsx');
 end
