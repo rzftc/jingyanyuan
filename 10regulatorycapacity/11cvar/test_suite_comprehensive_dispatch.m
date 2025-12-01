@@ -124,9 +124,12 @@ if any(~isnan(b_run_cost))
     ylabel('CVaR 潜在违约风险 (kW) [越激进越高]');
     
     xlabel('风险厌恶系数 \beta');
-    title('风险偏好对调度策略的影响: 随着Beta增加，宁愿切负荷也不冒违约风险');
+    % title('风险偏好对调度策略的影响: 随着Beta增加，宁愿切负荷也不冒违约风险'); % [已删除标题]
     legend('切负荷量 (安全性)', '潜在违约风险 (经济性代价)', 'Location', 'best');
     grid on;
+    
+    % 保存为高DPI PNG
+    print(gcf, '风险偏好灵敏度分析.png', '-dpng', '-r300');
 end
 
 %% ================= 场景 C: 网络阻塞管理 =================
@@ -158,8 +161,12 @@ if exitflag_C > 0
     yline(limit_val, 'r--', 'LineWidth', 2, 'Label', '线路限额');
     yline(-limit_val, 'r--', 'LineWidth', 2);
     ylabel('线路1 潮流 (kW)'); xlabel('时间步');
-    title('网络约束下的潮流控制效果');
+    % title('网络约束下的潮流控制效果'); % [已删除标题]
     grid on;
+    
+    % 保存为高DPI PNG
+    print(gcf, '网络阻塞管理测试.png', '-dpng', '-r300');
+    
     fprintf('  - 求解成功。最大潮流: %.2f (限额 %.2f)\n', max(abs(Flow_L1)), limit_val);
 else
     fprintf('  - 求解失败。\n');
@@ -197,8 +204,11 @@ else
     
     set(gca, 'XTickLabel', {'中性 (\beta=0)', '规避 (\beta=100)'});
     ylabel('极端场景实际违约量 (kW)');
-    title(['黑天鹅场景(#', num2str(worst_idx), ')下的实际执行违约对比']);
+    % title(['黑天鹅场景(#', num2str(worst_idx), ')下的实际执行违约对比']); % [已删除标题]
     grid on;
+    
+    % 保存为高DPI PNG
+    print(gcf, '极端场景鲁棒性测试.png', '-dpng', '-r300');
 end
 
 fprintf('\n测试结束。\n');
