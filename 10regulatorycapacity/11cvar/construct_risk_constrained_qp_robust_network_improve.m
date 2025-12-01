@@ -1,8 +1,10 @@
 function [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_robust_network_improve(...
     P_req, S_AC, S_EV, R_AC, R_EV, cost_p, risk_p, net_p)
-    % construct_risk_constrained_qp_robust_network (修正版)
-    % 增加数值稳定性处理，修复 Beta=0 时的求解失败问题
-
+    % construct_risk_constrained_qp_robust_network (最终修正版)
+    % 输入:
+    %   R_AC, R_EV: 必须传入物理最大容量(Physical Max)，而非保守的可靠容量，
+    %               否则无法体现风险权衡。
+    
     [T, N_scenarios] = size(S_AC);
     N_line = size(net_p.PTDF, 1);
     
@@ -16,25 +18,25 @@ function [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_ro
     
     num_vars = idx_z(end);
     
-    %% 1. 目标函数 (修正：增加正则化项)
-    % 添加 1e-6 的正则化项，保证 H 矩阵严格正定，避免 Exitflag -6
+    %% 1. 目标函数
     H = sparse(num_vars, num_vars);
     
     % 功率成本二次项
     H(sub2ind(size(H), idx_P_AC, idx_P_AC)) = 2 * cost_p.c2_ac + 1e-6;
     H(sub2ind(size(H), idx_P_EV, idx_P_EV)) = 2 * cost_p.c2_ev + 1e-6;
     
-    % 松弛变量二次项 (惩罚)
-    H(sub2ind(size(H), idx_Slack, idx_Slack)) = 2 * 10000 + 1e-6; 
+    % [重要修复] Slack 变量只有线性惩罚，二次项设为微小正则化
+    % 之前这里是 20000，导致 Slack 成本被错误放大
+    H(sub2ind(size(H), idx_Slack, idx_Slack)) = 1e-6; 
     
-    % 风险变量正则化 (关键修复：防止 Beta=0 时矩阵奇异)
+    % 风险变量正则化 (防止 Beta=0 时奇异)
     H(idx_eta, idx_eta) = 1e-6; 
     H(sub2ind(size(H), idx_z, idx_z)) = 1e-6;
 
     f = zeros(num_vars, 1);
     f(idx_P_AC) = cost_p.c1_ac;
     f(idx_P_EV) = cost_p.c1_ev;
-    f(idx_Slack) = cost_p.c_slack; 
+    f(idx_Slack) = cost_p.c_slack; % 线性惩罚
     f(idx_eta)  = risk_p.beta;
     f(idx_z)    = risk_p.beta / (N_scenarios * (1 - risk_p.confidence));
     
@@ -43,26 +45,30 @@ function [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_ro
     for t = 1:T
         Aeq(t, idx_P_AC(t)) = 1;
         Aeq(t, idx_P_EV(t)) = 1;
-        Aeq(t, idx_Slack(t)) = 1; % P_AC + P_EV + P_Slack = P_req
+        Aeq(t, idx_Slack(t)) = 1; 
     end
     beq = P_req;
     
     %% 3. 不等式约束
-    % ... (CVaR 和 网络约束逻辑保持不变，为节省篇幅省略重复注释) ...
     rho = risk_p.rho_pen;
     
-    % CVaR 约束组 1
+    % CVaR 约束组 1: Loss - eta - z <= 0
+    % Loss = rho_pen * (P_total - Capacity_Scenario)
     A_cvar1 = sparse(N_scenarios, num_vars);
     b_cvar1 = zeros(N_scenarios, 1);
+    
     for s = 1:N_scenarios
         A_cvar1(s, idx_P_AC) = rho; 
         A_cvar1(s, idx_P_EV) = rho;
         A_cvar1(s, idx_eta)  = -1;
         A_cvar1(s, idx_z(s)) = -1;
-        b_cvar1(s) = rho * (sum(S_AC(:,s)) + sum(S_EV(:,s)));
+        
+        % 这里的 Capacity 对应场景 s 的实际能力
+        total_limit_s = sum(S_AC(:,s)) + sum(S_EV(:,s));
+        b_cvar1(s) = rho * total_limit_s;
     end
 
-    % CVaR 约束组 2
+    % CVaR 约束组 2: z >= -eta
     A_cvar2 = sparse(N_scenarios, num_vars);
     b_cvar2 = zeros(N_scenarios, 1);
     for s = 1:N_scenarios
@@ -85,12 +91,11 @@ function [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_ro
             P_base_t = zeros(N_line, 1);
         end
         for l = 1:N_line
-            % Upper limit
             count = count + 1;
             A_net(count, idx_P_AC(t)) = Sens_AC(l);
             A_net(count, idx_P_EV(t)) = Sens_EV(l);
             b_net(count) = net_p.LineLimit(l) - P_base_t(l);
-            % Lower limit
+            
             count = count + 1;
             A_net(count, idx_P_AC(t)) = -Sens_AC(l);
             A_net(count, idx_P_EV(t)) = -Sens_EV(l);
@@ -105,15 +110,17 @@ function [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_ro
     lb = -inf(num_vars, 1);
     ub = inf(num_vars, 1);
     
-    lb(idx_P_AC) = 0; ub(idx_P_AC) = R_AC;
+    lb(idx_P_AC) = 0; ub(idx_P_AC) = R_AC; % R_AC 应为物理最大容量
     lb(idx_P_EV) = 0; ub(idx_P_EV) = R_EV;
-    lb(idx_Slack) = -inf; ub(idx_Slack) = inf; % 允许正负偏差
+    lb(idx_Slack) = -inf; ub(idx_Slack) = inf; 
     
-    lb(idx_eta) = -1e10; % 给 eta 一个极小的下界，防止无界解
+    lb(idx_eta) = -1e10; 
     lb(idx_z) = 0;      
     
     %% 输出索引
     info.idx_P_AC = idx_P_AC;
     info.idx_P_EV = idx_P_EV;
     info.idx_Slack = idx_Slack;
+    info.idx_z = idx_z;
+    info.idx_eta = idx_eta;
 end
