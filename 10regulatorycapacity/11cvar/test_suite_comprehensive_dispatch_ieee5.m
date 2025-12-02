@@ -1,5 +1,8 @@
 %% test_suite_comprehensive_dispatch_ieee5.m (IEEE 5节点系统 + 逻辑修正版)
 % 修正物理边界逻辑，确保风险权衡有效；采用 IEEE PJM 5-Bus 拓扑。
+% [修改说明] 
+% 1. 增加了详细调度方案的堆叠图绘制。
+% 2. 所有时序图的时间轴已统一修正为 06:00 - 30:00 (次日06:00)。
 
 clear; close all; clc;
 
@@ -13,6 +16,20 @@ load(data_file);
 
 % 数据维度对齐
 [T_steps, N_scenarios] = size(Scenarios_AC_Up);
+
+% --- [修改] 统一时间轴设置 ---
+% 确保时间轴是从 6:00 到 30:00
+if exist('time_points', 'var')
+    t_axis = time_points;
+else
+    % 如果数据中没有 time_points，手动生成 (假设dt=5min)
+    dt_sim = 5/60; 
+    t_axis = 6 : dt_sim : (6 + (T_steps-1)*dt_sim);
+end
+
+% 定义通用的时间轴刻度和标签
+x_ticks_set = [6, 12, 18, 24, 30];
+x_labels_set = {'06:00', '12:00', '18:00', '24:00', '06:00(+1)'};
 
 % --- 修正1: 物理边界设置 ---
 % 使用场景集最大值作为物理硬约束，而非 95% 分位数，以便探索风险区域
@@ -141,6 +158,7 @@ for i = 1:length(beta_values)
         
         strategies{i}.P_AC = P_AC;
         strategies{i}.P_EV = P_EV;
+        strategies{i}.P_Slack = P_Slack; % 记录 Slack 供后续绘图使用
         
         fprintf('发电成本: %.2f, 切负荷量: %.2f kW, CVaR风险: %.2f\n', ...
             cost_gen, b_slack_sum(i), cvar_val);
@@ -149,7 +167,7 @@ for i = 1:length(beta_values)
     end
 end
 
-% --- 绘图 B ---
+% --- 绘图 B1: 风险灵敏度统计 (柱状图) ---
 if any(~isnan(b_run_cost))
     figure('Name', '场景B_风险灵敏度', 'Color', 'w', 'Position', [100, 100, 900, 400]);
     
@@ -167,6 +185,96 @@ if any(~isnan(b_run_cost))
     grid on;
     
     print(gcf, '风险偏好灵敏度分析.png', '-dpng', '-r300');
+end
+
+%% ================= [新增] 绘制具体调度方案 (以 Beta=10 为例) =================
+fprintf('\n>>> 正在绘制详细调度方案 (选择 Beta=10) ...\n');
+idx_plot = 2; % 对应 beta_values = [0, 10, 100] 中的 10 (适中策略)
+
+if idx_plot <= length(strategies) && ~isempty(strategies{idx_plot})
+    % 提取数据
+    P_AC_opt = strategies{idx_plot}.P_AC;
+    P_EV_opt = strategies{idx_plot}.P_EV;
+    
+    % 计算实际功率缺额 (Slack)
+    % 优先使用优化器返回的 Slack，或者重新计算 P_req - P_supply
+    if isfield(strategies{idx_plot}, 'P_Slack')
+        P_Slack_calc = strategies{idx_plot}.P_Slack;
+    else
+        P_Supply = P_AC_opt + P_EV_opt;
+        P_Slack_calc = P_grid_demand - P_Supply;
+    end
+    P_Slack_calc(P_Slack_calc < 1e-5) = 0; % 修正微小数值误差
+    
+    % --- 绘图: 协同调度堆叠图 & 边界校验 ---
+    figure('Name', '协同调度详细方案 (Beta=10)', 'Color', 'w', 'Position', [150, 150, 1200, 800]);
+    
+    % === 子图 1: 功率平衡堆叠图 (Stacked Area Plot) ===
+    subplot(2, 1, 1);
+    hold on;
+    
+    % 1. 准备堆叠矩阵: [AC, EV, Slack]
+    Y_Stack = [P_AC_opt, P_EV_opt, P_Slack_calc];
+    
+    % 2. 使用 area 绘制堆叠图
+    h_area = area(t_axis, Y_Stack);
+    
+    % 3. 调整颜色和样式
+    % AC (底层): 蓝色
+    h_area(1).FaceColor = [0.00, 0.45, 0.74]; 
+    h_area(1).EdgeColor = 'none'; 
+    
+    % EV (中层): 绿色
+    h_area(2).FaceColor = [0.47, 0.67, 0.19]; 
+    h_area(2).EdgeColor = 'none';
+    
+    % Slack (顶层): 红色
+    h_area(3).FaceColor = [0.85, 0.33, 0.10]; 
+    h_area(3).EdgeColor = 'none';
+    h_area(3).FaceAlpha = 0.8;
+    
+    % 4. 绘制总需求曲线 (黑色虚线)
+    plot(t_axis, P_grid_demand, 'k--', 'LineWidth', 2.0, 'DisplayName', '电网总需求 (Target)');
+    
+    ylabel('功率 (kW)');
+    title(sprintf('源荷协同调度功率堆叠图 (风险厌恶系数 \\beta=%d)', beta_values(idx_plot)), 'FontSize', 14);
+    
+    legend([h_area(1), h_area(2), h_area(3)], ...
+           {'空调出力 (AC)', '电动汽车出力 (EV)', '功率缺额 (Slack)'}, ...
+           'Location', 'northwest', 'FontSize', 10);
+           
+    grid on;
+    xlim([6, 30]); % 锁定时间轴范围
+    % 设置X轴刻度
+    set(gca, 'XTick', x_ticks_set, 'XTickLabel', x_labels_set);
+    ylim([0, max(P_grid_demand) * 1.15]);
+    
+    % === 子图 2: 调度指令与可靠边界对比 (验证鲁棒性) ===
+    subplot(2, 1, 2);
+    hold on;
+    
+    % AC 对比 (蓝色系)
+    plot(t_axis, Reliable_AC_Up, '--', 'Color', [0.6, 0.6, 1.0], 'LineWidth', 1.5, 'DisplayName', 'AC 可靠上界 (95%)');
+    plot(t_axis, P_AC_opt, '-', 'Color', [0.00, 0.45, 0.74], 'LineWidth', 2.0, 'DisplayName', 'AC 实际调度');
+    
+    % EV 对比 (绿色系)
+    plot(t_axis, Reliable_EV_Up, '--', 'Color', [0.6, 0.9, 0.6], 'LineWidth', 1.5, 'DisplayName', 'EV 可靠上界 (95%)');
+    plot(t_axis, P_EV_opt, '-', 'Color', [0.47, 0.67, 0.19], 'LineWidth', 2.0, 'DisplayName', 'EV 实际调度');
+    
+    ylabel('调节功率 (kW)'); 
+    xlabel('时间');
+    title('调度指令 vs 可靠调节域边界 (鲁棒性校验)', 'FontSize', 14);
+    
+    legend('Location', 'best', 'NumColumns', 2, 'FontSize', 10);
+    grid on;
+    xlim([6, 30]); % 锁定时间轴范围
+    set(gca, 'XTick', x_ticks_set, 'XTickLabel', x_labels_set);
+    
+    % 保存图像
+    print(gcf, '协同调度详细方案_Beta10_Optimized.png', '-dpng', '-r300');
+    fprintf('  >>> 优化后的调度方案图已保存: 协同调度详细方案_Beta10_Optimized.png\n');
+else
+    warning('未找到 Beta=10 的策略数据，跳过详细绘图。');
 end
 
 %% ================= 场景 C: 网络阻塞管理 =================
@@ -194,11 +302,17 @@ if exitflag_C > 0
     Flow_L1 = Sens_AC(1)*P_AC_C + Sens_EV(1)*P_EV_C;
     
     figure('Name', '场景C_网络阻塞', 'Color', 'w', 'Position', [100, 550, 800, 400]);
-    plot(1:T_steps, Flow_L1, 'b-', 'LineWidth', 1.5); hold on;
+    
+    % [修改] 使用 t_axis (6-30) 绘制潮流曲线
+    plot(t_axis, Flow_L1, 'b-', 'LineWidth', 1.5); hold on;
     yline(limit_val, 'r--', 'LineWidth', 2, 'Label', '线路限额');
     yline(-limit_val, 'r--', 'LineWidth', 2);
-    ylabel('线路1 潮流 (kW)'); xlabel('时间步');
+    
+    ylabel('线路1 潮流 (kW)'); 
+    xlabel('时间');
     grid on;
+    xlim([6, 30]);
+    set(gca, 'XTick', x_ticks_set, 'XTickLabel', x_labels_set);
     
     print(gcf, '网络阻塞管理测试.png', '-dpng', '-r300');
     
