@@ -1,8 +1,9 @@
 %% test_suite_comprehensive_dispatch_ieee5.m (IEEE 5节点系统 + 逻辑修正版)
 % 修正物理边界逻辑，确保风险权衡有效；采用 IEEE PJM 5-Bus 拓扑。
 % [修改说明] 
-% 1. 增加了详细调度方案的堆叠图绘制。
-% 2. 所有时序图的时间轴已统一修正为 06:00 - 30:00 (次日06:00)。
+% 1. 增加了详细调度方案的堆叠图绘制 (使用 area 堆叠)。
+% 2. 统一时间轴为 06:00 - 30:00。
+% 3. [新增] 日志中增加“总运行成本”显示，验证风险代价。
 
 clear; close all; clc;
 
@@ -41,7 +42,7 @@ Reliable_EV_Up = Reliable_EV_Up(:);
 % --- 基础参数 ---
 cost_params.c1_ac = 0.5;  cost_params.c2_ac = 0.01;
 cost_params.c1_ev = 0.4;  cost_params.c2_ev = 0.01;
-cost_params.c_slack = 200; % 切负荷惩罚
+cost_params.c_slack = 200; % 切负荷惩罚 (单位: 元/kW)
 
 % --- 修正2: 构造风险权衡需求 ---
 % 需求设为 [可靠容量, 物理最大容量] 之间，强制触发 CVaR 权衡
@@ -147,8 +148,11 @@ for i = 1:length(beta_values)
                     
         % 2. 切负荷成本
         cost_slack = sum(cost_params.c_slack * abs(P_Slack));
+
+        % 3. 总运行成本 (用于验证理论：风险规避策略虽然发电成本低，但总成本高)
+        total_real_cost = cost_gen + cost_slack;
         
-        % 3. CVaR 风险值
+        % 4. CVaR 风险值
         cvar_val = eta_val + (1 / (N_scenarios * (1 - risk_p.confidence))) * sum(z_val);
         
         % 记录结果
@@ -158,10 +162,11 @@ for i = 1:length(beta_values)
         
         strategies{i}.P_AC = P_AC;
         strategies{i}.P_EV = P_EV;
-        strategies{i}.P_Slack = P_Slack; % 记录 Slack 供后续绘图使用
+        strategies{i}.P_Slack = P_Slack; 
         
-        fprintf('发电成本: %.2f, 切负荷量: %.2f kW, CVaR风险: %.2f\n', ...
-            cost_gen, b_slack_sum(i), cvar_val);
+        % [修改] 增加总成本显示
+        fprintf('发电成本: %.2f, 切负荷量: %.2f kW, 总运行成本: %.2f, CVaR风险: %.2f\n', ...
+            cost_gen, b_slack_sum(i), total_real_cost, cvar_val);
     else
         fprintf('失败 (Exitflag %d)\n', exitflag);
     end

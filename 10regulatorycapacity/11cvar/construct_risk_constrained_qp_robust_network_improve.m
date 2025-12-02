@@ -112,7 +112,7 @@ function [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_ro
     
     lb(idx_P_AC) = 0; ub(idx_P_AC) = R_AC; % R_AC 应为物理最大容量
     lb(idx_P_EV) = 0; ub(idx_P_EV) = R_EV;
-    lb(idx_Slack) = -inf; ub(idx_Slack) = inf; 
+    lb(idx_Slack) = 0; ub(idx_Slack) = inf;  % [修正] Slack必须非负，代表切负荷
     
     lb(idx_eta) = -1e10; 
     lb(idx_z) = 0;      
