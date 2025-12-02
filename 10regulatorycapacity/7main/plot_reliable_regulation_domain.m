@@ -1,6 +1,5 @@
 %% plot_reliable_regulation_domain.m
 % 功能：读取可靠调节域数据文件并绘制可视化图表
-% 数据源：reliable_regulation_domain_1000_mix.mat
 
 clear; close all; clc;
 

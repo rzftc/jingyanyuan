@@ -1,16 +1,20 @@
 function [AC_Up_Sum, AC_Down_Sum] = run_AC_simulation_MC(random_seed, acFileName)
     % run_AC_simulation_MC
     % 修改：强制系统按基线运行，不响应外部指令，以评估最大物理潜力。
+    % [修改] 仿真时间调整为 6:00 到 30:00 (24小时，跨天)
     
     %% 1. 系统初始化
     if nargin > 0
         rng(random_seed, 'Threefry'); % 使用传入的种子控制随机性
     end
     
-    T_total = 24; 
-    dt = 5/60;    
-    time_points = 0:dt:T_total; 
+    % --- [修改] 时间参数调整 ---
+    simulation_start_hour = 6;  % 仿真开始于 6:00
+    simulation_end_hour   = 30; % 仿真结束于次日 6:00
+    dt = 5/60;                  % 时间步长 (5分钟)
+    time_points = simulation_start_hour:dt:simulation_end_hour; 
     T_steps_total = length(time_points);
+    % -------------------------
 
     base_price = 30; 
 
@@ -39,7 +43,7 @@ function [AC_Up_Sum, AC_Down_Sum] = run_AC_simulation_MC(random_seed, acFileName
     temp_ACs = ACs;
     max_Tset_all = max([ACs.Tset_original]);
     
-    % 环境温度生成
+    % 环境温度生成 (time_points 现在是 6..30, 15.0 对应下午3点峰值)
     T_ja_min_ambient = max_Tset_all + 0.1; 
     T_ja_peak_ambient = max_Tset_all + 3.0; 
     T_ja_mean = (T_ja_min_ambient + T_ja_peak_ambient) / 2;
