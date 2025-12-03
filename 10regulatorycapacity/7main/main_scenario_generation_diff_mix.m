@@ -20,7 +20,7 @@ fprintf('==========================================================\n');
 
 % --- 0. 准备 EV 基准数据 (物理参数锁定) ---
 % 我们生成一份基准文件，包含所有EV的固定物理参数(C, P_N, eta, E_ini等)
-base_ev_file = 'ini_data_mont/EV_Base_Fixed_mix.xlsx';
+base_ev_file = 'ini_data_mont/EV_Base_Fixed_mix_01.xlsx';
 
 if ~exist(base_ev_file, 'file')
     % 生成 1000 辆 EV 的基准数据 (仅生成一次)
@@ -144,7 +144,7 @@ Reliable_EV_Energy_Need = quantile(Scenarios_EV_Energy_Total, 1-alpha);
 fprintf('提取完成。EV 最小能量需求: %.2f kWh\n', Reliable_EV_Energy_Need);
 
 %% ================= 5. 结果保存 (保持不变) =================
-save('reliable_regulation_domain_1000_mix.mat', ...
+save('reliable_regulation_domain_1000_mix_01.mat', ...
     'Scenarios_AC_Up', 'Scenarios_AC_Down', ...
     'Scenarios_EV_Up', 'Scenarios_EV_Down', ...
     'Reliable_AC_Up', 'Reliable_AC_Down', ...
