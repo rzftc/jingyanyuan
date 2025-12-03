@@ -1,4 +1,3 @@
-%% test_suite_comprehensive_dispatch_ieee5.m (完整优化版 - 输出修正)
 clear; close all; clc;
 
 %% ================= 1. 全局初始化 =================
@@ -209,35 +208,53 @@ if idx_plot <= length(strategies) && ~isempty(strategies{idx_plot})
     end
     P_Slack_calc(P_Slack_calc < 1e-5) = 0; 
     
-    figure('Name', '协同调度详细方案', 'Color', 'w', 'Position', [150, 150, 1200, 800]);
-    
-    % 子图 1: 功率堆叠
-    subplot(2, 1, 1); hold on;
+    % --- 图 1: 功率堆叠 (独立窗口) ---
+    fig_stack = figure('Name', '协同调度功率堆叠', 'Color', 'w', 'Position', [150, 150, 1000, 600]);
+    hold on;
     Y_Stack = [P_AC_opt, P_EV_opt, P_Slack_calc];
     h_area = area(t_axis, Y_Stack);
     
-    h_area(1).FaceColor = [0.00, 0.45, 0.74]; h_area(1).EdgeColor = 'none'; % AC
-    h_area(2).FaceColor = [0.47, 0.67, 0.19]; h_area(2).EdgeColor = 'none'; % EV
-    h_area(3).FaceColor = [0.85, 0.33, 0.10]; h_area(3).EdgeColor = 'none'; h_area(3).FaceAlpha = 0.8; % Slack
+    h_area(1).FaceColor = [0.00, 0.45, 0.74]; h_area(1).EdgeColor = 'none'; % AC (蓝色)
+    h_area(2).FaceColor = [0.47, 0.67, 0.19]; h_area(2).EdgeColor = 'none'; % EV (绿色)
+    h_area(3).FaceColor = [0.85, 0.33, 0.10]; h_area(3).EdgeColor = 'none'; h_area(3).FaceAlpha = 0.8; % Slack (橙红)
     
     plot(t_axis, P_grid_demand, 'k--', 'LineWidth', 2.0, 'DisplayName', '电网总需求');
     
-    ylabel('功率 (kW)');
-    title(sprintf('源荷协同调度功率堆叠 (含互补性优化, \\beta=%d)', beta_values(idx_plot)), 'FontSize', 14);
-    legend([h_area(1), h_area(2), h_area(3)], {'空调 (AC)', '电动汽车 (EV)', '缺额 (Slack)'}, 'Location', 'northwest');
-    grid on; xlim([6, 30]); set(gca, 'XTick', x_ticks_set, 'XTickLabel', x_labels_set);
+    ylabel('功率 (kW)', 'FontSize', 14, 'FontName', 'Microsoft YaHei');
+    % title(...); % [已移除标题]
     
-    % 子图 2: 互补性展示 (AC vs EV 曲线)
-    subplot(2, 1, 2); hold on;
-    plot(t_axis, P_AC_opt, '-', 'Color', [0.00, 0.45, 0.74], 'LineWidth', 2.0, 'DisplayName', 'AC 出力');
-    plot(t_axis, P_EV_opt, '-', 'Color', [0.47, 0.67, 0.19], 'LineWidth', 2.0, 'DisplayName', 'EV 出力');
-    ylabel('调节功率 (kW)'); xlabel('时间');
-    title('AC与EV时序出力对比 (验证错峰效果)', 'FontSize', 14);
-    legend('Location', 'best'); grid on; xlim([6, 30]); set(gca, 'XTick', x_ticks_set, 'XTickLabel', x_labels_set);
+    legend([h_area(1), h_area(2), h_area(3)], {'空调 (AC)', '电动汽车 (EV)', '缺额 (Slack)'}, ...
+           'Location', 'northwest', 'FontSize', 12, 'FontName', 'Microsoft YaHei');
+    grid on; 
+    xlim([6, 30]); 
+    set(gca, 'XTick', x_ticks_set, 'XTickLabel', x_labels_set, ...
+        'FontSize', 12, 'FontName', 'Microsoft YaHei', 'LineWidth', 1.2);
     
-    print(gcf, '协同调度详细方案_Optimized.png', '-dpng', '-r300');
+    % 保存图 1
+    print(fig_stack, '协同调度功率堆叠_Optimized.png', '-dpng', '-r600');
+    fprintf('  >>> 图1已保存: 协同调度功率堆叠_Optimized.png\n');
+    
+    
+    % --- 图 2: 互补性展示 (AC vs EV 曲线) (独立窗口) ---
+    fig_comp = figure('Name', 'AC与EV时序出力对比', 'Color', 'w', 'Position', [200, 200, 1000, 600]);
+    hold on;
+    plot(t_axis, P_AC_opt, '-', 'Color', [0.00, 0.45, 0.74], 'LineWidth', 2.5, 'DisplayName', 'AC 出力');
+    plot(t_axis, P_EV_opt, '-', 'Color', [0.47, 0.67, 0.19], 'LineWidth', 2.5, 'DisplayName', 'EV 出力');
+    
+    ylabel('调节功率 (kW)', 'FontSize', 14, 'FontName', 'Microsoft YaHei'); 
+    xlabel('时间', 'FontSize', 14, 'FontName', 'Microsoft YaHei');
+    % title(...); % [已移除标题]
+    
+    legend('Location', 'best', 'FontSize', 12, 'FontName', 'Microsoft YaHei'); 
+    grid on; 
+    xlim([6, 30]); 
+    set(gca, 'XTick', x_ticks_set, 'XTickLabel', x_labels_set, ...
+        'FontSize', 12, 'FontName', 'Microsoft YaHei', 'LineWidth', 1.2);
+    
+    % 保存图 2
+    print(fig_comp, 'AC与EV时序出力对比_Optimized.png', '-dpng', '-r600');
+    fprintf('  >>> 图2已保存: AC与EV时序出力对比_Optimized.png\n');
 end
-
 %% ================= 场景 C: 网络阻塞管理 =================
 fprintf('\n>>> 场景 C: 网络阻塞管理测试 <<<\n');
 
