@@ -13,7 +13,7 @@ set(0, 'DefaultTextFontName', 'Microsoft YaHei');
 
 %% === 第一部分：单次仿真结果绘图 ===
 
-mat_filename = 'AC_Stateful_Simulation_Results.mat';
+mat_filename = 'AC_Stateful_Simulation_Results_5min.mat';
 fprintf('检查单次仿真数据文件: %s ...\n', mat_filename);
 
 has_single_result = false;

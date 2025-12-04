@@ -188,6 +188,15 @@ for p_idx = 1:num_prices
     Agg_Model_Potential_Up_History = zeros(T_steps_total, 1);   % 基于A,B,C计算的潜力
     Agg_Model_Potential_Down_History = zeros(T_steps_total, 1);
     % --- [新增 V12] 结束 ---
+    % 为了匹配单体计算中使用的 max(P_base) 逻辑
+    Agg_P_Physical_Max_Total = 0;
+    for i = 1:num_AC_participating
+        ac_i = ACs_participating(i);
+        % 计算该单体在全时段内的最大基线功率
+        P_base_profile_i = ACbaseP_single(ac_i.T_ja, ac_i.Tset, ac_i.R, ac_i.eta);
+        P_max_i = max(abs(P_base_profile_i));
+        Agg_P_Physical_Max_Total = Agg_P_Physical_Max_Total + P_max_i;
+    end
 
     % --- [新增] 个体潜力存储 (用于保存到 MAT) ---
     AC_Up_Individual = zeros(num_AC_participating, T_steps_total);
@@ -234,9 +243,9 @@ for p_idx = 1:num_prices
 
             % A. 计算当前单体物理潜力 (用于记录和约束)
             [P_plus, P_minus] = calculateACAdjustmentPotentia(...
-                P_base_i, 2*abs(P_base_i), 0, ... % P_base, P_max=2*Pbase, P_min=0
-                ac_i.alpha, ac_i.beta, ac_i.gamma,...
-                soc_current_i, dt);
+            P_base_i, max(abs(ACbaseP_single(ac_i.T_ja, ac_i.Tset, ac_i.R, ac_i.eta))), 0, ... 
+            ac_i.alpha, ac_i.beta, ac_i.gamma,...
+            soc_current_i, dt);
 
             temp_AC_Up_agg = temp_AC_Up_agg + P_plus;
             temp_AC_Down_agg = temp_AC_Down_agg + P_minus;
@@ -261,7 +270,7 @@ for p_idx = 1:num_prices
             temp_SOC_for_next_step(i) = soc_next_i;
             temp_P_achieved_this_step(i) = delta_Pj_clipped;
         end
-
+        
         % 6. 存储当前时间步 t 的单体累加潜力
         Agg_P_Potential_Up_History(t_idx) = temp_AC_Up_agg;
         Agg_P_Potential_Down_History(t_idx) = temp_AC_Down_agg;
@@ -270,34 +279,35 @@ for p_idx = 1:num_prices
         AC_Up_Individual(:, t_idx) = temp_AC_Up_Ind;
         AC_Down_Individual(:, t_idx) = temp_AC_Down_Ind;
 
-        % --- [修正 V12] 计算聚合模型理论潜力 (与单体逻辑对齐) ---
-        % 1. 能量约束: (S_target - A*S - C) / (B * dt)
-        %    注意：这里除以 dt 是因为 calculateACAdjustmentPotentia 中分母包含了 dt
-        if abs(AggParams.B) > 1e-9
-            P_agg_energy_up = (1 - AggParams.A * SOC_agg_t - AggParams.C) / (AggParams.B * dt);
-            P_agg_energy_down = (0 - AggParams.A * SOC_agg_t - AggParams.C) / (AggParams.B * dt);
-        else
-            P_agg_energy_up = 0; P_agg_energy_down = 0;
-        end
+         % --- [修正 V12] 计算聚合模型理论潜力 (与单体逻辑对齐) ---
+         % 1. 能量约束: (S_target - A*S - C) / (B * dt)
+         if abs(AggParams.B) > 1e-9
+             P_agg_energy_up = (1 - AggParams.A * SOC_agg_t - AggParams.C) / (AggParams.B * dt);
+             P_agg_energy_down = (0 - AggParams.A * SOC_agg_t - AggParams.C) / (AggParams.B * dt);
+         else
+             P_agg_energy_up = 0; P_agg_energy_down = 0;
+         end
 
-        % 2. 物理功率约束: 基于 temp_P_base_agg
-        %    上调约束 (Pmax - Pbase): 2*Pbase - Pbase = Pbase
-        %    下调约束 (Pmin - Pbase): 0 - Pbase = -Pbase
-        P_agg_power_up = temp_P_base_agg;
-        P_agg_power_down = -temp_P_base_agg;
+         % 2. 物理功率约束:
+         % [关键修改]：现在上调约束不再是 temp_P_base_agg
+         % 而是：总物理最大功率 - 当前总基线功率
+         P_agg_power_up = Agg_P_Physical_Max_Total - temp_P_base_agg;
 
-        % 3. 取交集 (Min/Max)
-        Agg_Model_Potential_Up_History(t_idx) = min(P_agg_energy_up, P_agg_power_up);
-        Agg_Model_Potential_Down_History(t_idx) = max(P_agg_energy_down, P_agg_power_down);
+         % 下调约束保持不变 (Pmin - Pbase): 0 - Pbase = -Pbase
+         P_agg_power_down = -temp_P_base_agg;
 
-        % 7. 存储实际响应功率
-        Agg_P_Achieved_History(t_idx) = sum(temp_P_achieved_this_step);
+         % 3. 取交集 (Min/Max)
+         Agg_Model_Potential_Up_History(t_idx) = min(P_agg_energy_up, P_agg_power_up);
+         Agg_Model_Potential_Down_History(t_idx) = max(P_agg_energy_down, P_agg_power_down);
 
-        % [V5] 存储单体功率历史
-        Individual_Power_History(t_idx, :) = temp_P_achieved_this_step';
+         % 7. 存储实际响应功率
+         Agg_P_Achieved_History(t_idx) = sum(temp_P_achieved_this_step);
 
-        % 8. 更新状态向量用于下一循环
-        CURRENT_SOC_AC = temp_SOC_for_next_step; % CURRENT_SOC_AC 现在是 SOC(t+1)
+         % [V5] 存储单体功率历史
+         Individual_Power_History(t_idx, :) = temp_P_achieved_this_step';
+
+         % 8. 更新状态向量用于下一循环
+         CURRENT_SOC_AC = temp_SOC_for_next_step; % CURRENT_SOC_AC 现在是 SOC(t+1)
 
     end % 结束 t_idx 循环
 
