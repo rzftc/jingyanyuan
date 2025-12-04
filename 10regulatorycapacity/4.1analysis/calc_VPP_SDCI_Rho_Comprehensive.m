@@ -217,9 +217,15 @@ function plot_bar_chart(x_labels, y_data, ylabel_str, file_name_cn)
     figure('Name', file_name_cn, 'Color', 'w', 'Position', [200, 200, 600, 450]);
     b = bar(y_data);
     b.FaceColor = 'flat';
-    b.CData(1,:) = [0.2 0.6 0.8]; % 5min 蓝
-    b.CData(2,:) = [0.2 0.7 0.5]; % 15min 绿
-    b.CData(3,:) = [0.8 0.4 0.2]; % 60min 橙
+    % 注意：这里假设有3个柱子，如果数据量不同可能需要调整
+    if length(y_data) >= 3
+        b.CData(1,:) = [0.2 0.6 0.8]; % 5min 蓝
+        b.CData(2,:) = [0.2 0.7 0.5]; % 15min 绿
+        b.CData(3,:) = [0.8 0.4 0.2]; % 60min 橙
+    else
+        % 简单的颜色回退策略
+        b.FaceColor = [0.2 0.6 0.8];
+    end
     
     set(gca, 'XTickLabel', x_labels, 'FontSize', 12, 'FontName', 'Microsoft YaHei');
     ylabel(ylabel_str, 'FontName', 'Microsoft YaHei', 'FontSize', 12);
@@ -229,23 +235,53 @@ function plot_bar_chart(x_labels, y_data, ylabel_str, file_name_cn)
     
     grid on;
     
-    % 添加数值标签
+    % --- [修正1] 动态添加数值标签 (适配正负数) ---
     xtips = b.XEndPoints;
     ytips = b.YEndPoints;
     labels = string(round(b.YData, 4));
-    text(xtips, ytips, labels, 'HorizontalAlignment', 'center', ...
-        'VerticalAlignment', 'bottom', 'FontSize', 10, 'FontName', 'Arial'); % 数字用Arial好看
+    
+    for k = 1:length(ytips)
+        if ytips(k) >= 0
+            va = 'bottom'; % 正数显示在柱顶上方
+            v_offset = 0.01 * max(abs(y_data)); % 可选微调
+        else
+            va = 'top';    % 负数显示在柱底下方
+            v_offset = -0.01 * max(abs(y_data));
+        end
+        
+        text(xtips(k), ytips(k) + v_offset, labels(k), ...
+            'HorizontalAlignment', 'center', ...
+            'VerticalAlignment', va, ...
+            'FontSize', 10, 'FontName', 'Arial'); 
+    end
+
+    % --- [修正2] 边界美化 (确保包含0轴且适应负数) ---
+    y_max = max(y_data);
+    y_min = min(y_data);
+    padding = 0.15; % 15% 的留白
+    
+    % 计算绝对最大值用于确定留白尺度
+    abs_max = max(abs(y_data));
+    if abs_max == 0, abs_max = 1; end
+    margin = abs_max * padding;
+    
+    if y_min >= 0
+        % 全正数：0 到 max+margin
+        ylim([0, y_max + margin]);
+    elseif y_max <= 0
+        % 全负数：min-margin 到 0
+        ylim([y_min - margin, 0]);
+    else
+        % 正负混合：min-margin 到 max+margin
+        ylim([y_min - margin, y_max + margin]);
+    end
+    
+    % 绘制 0 轴线 (增强视觉效果)
+    yline(0, 'k-', 'LineWidth', 1.0);
     
     % 添加中文图例
     legend({'计算数值'}, 'Location', 'best', 'FontName', 'Microsoft YaHei');
 
-    % 简单的边界美化
-    if min(y_data) >= 0
-        ylim([0, max(y_data)*1.2]);
-    else
-        ylim([min(y_data)*1.2, max(y_data)*1.2]);
-    end
-    
     % 保存为高DPI PNG
     print(gcf, [file_name_cn '.png'], '-dpng', '-r300');
     fprintf('  已保存图片: %s.png\n', file_name_cn);
