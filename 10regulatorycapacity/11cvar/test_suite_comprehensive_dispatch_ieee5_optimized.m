@@ -3,7 +3,7 @@ clear; close all; clc;
 
 %% ================= 1. 全局初始化 =================
 fprintf('正在加载场景数据...\n');
-data_file = 'reliable_regulation_domain_1000_mix_01.mat';
+data_file = 'reliable_regulation_domain_1000_mix_01_update.mat';
 if ~exist(data_file, 'file')
     error('数据文件缺失！请先运行 main_scenario_generation_diff.m');
 end
@@ -239,8 +239,8 @@ if idx_plot <= length(strategies) && ~isempty(strategies{idx_plot})
     % --- 图 2: 互补性展示 (AC vs EV 曲线) (独立窗口) ---
     fig_comp = figure('Name', 'AC与EV时序出力对比', 'Color', 'w', 'Position', [200, 200, 1000, 600]);
     hold on;
-    plot(t_axis, P_AC_opt, '-', 'Color', [0.00, 0.45, 0.74], 'LineWidth', 2.5, 'DisplayName', 'AC 出力');
-    plot(t_axis, P_EV_opt, '-', 'Color', [0.47, 0.67, 0.19], 'LineWidth', 2.5, 'DisplayName', 'EV 出力');
+    plot(t_axis, P_AC_opt, '-', 'Color', [0.00, 0.45, 0.74], 'LineWidth', 2.5, 'DisplayName', 'AC 可调');
+    plot(t_axis, P_EV_opt, '-', 'Color', [0.47, 0.67, 0.19], 'LineWidth', 2.5, 'DisplayName', 'EV 可调');
     
     ylabel('调节功率 (kW)', 'FontSize', 14, 'FontName', 'Microsoft YaHei'); 
     xlabel('时间', 'FontSize', 14, 'FontName', 'Microsoft YaHei');
