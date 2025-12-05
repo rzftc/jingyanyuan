@@ -1,5 +1,4 @@
-%% test_suite_comprehensive_dispatch_ieee5_optimized.m (随机需求 + 恢复Area绘图版)
-% 修正说明：
+%% 修正说明：
 % 1. 物理边界：同时提取上调(Up)和下调(Down)边界。
 % 2. 需求生成：使用随机信号(randn)模拟电网24小时内随机的上下调节需求。
 % 3. 绘图修复：恢复使用 area 堆叠图展示调度结果（根据方向自动上下翻转），保持原有风格。
@@ -8,7 +7,7 @@ clear; close all; clc;
 
 %% ================= 1. 全局初始化 =================
 fprintf('正在加载场景数据...\n');
-data_file = 'reliable_regulation_domain_1000_mix_01_new.mat';
+data_file = 'reliable_regulation_domain_1000_mix_01_new2.mat';
 if ~exist(data_file, 'file')
     error('数据文件缺失！请先运行 main_scenario_generation_diff.m');
 end
