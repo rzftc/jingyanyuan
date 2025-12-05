@@ -2,6 +2,7 @@
 % 1. 物理边界：同时提取上调(Up)和下调(Down)边界。
 % 2. 需求生成：使用随机信号(randn)模拟电网24小时内随机的上下调节需求。
 % 3. 绘图修复：恢复使用 area 堆叠图展示调度结果（根据方向自动上下翻转），保持原有风格。
+% 4. [新增] 绘制第一次迭代与最后一次迭代的 SDCI 和 Rho 指标对比图。
 
 clear; close all; clc;
 
@@ -213,6 +214,17 @@ for i = 1:length(beta_values)
             strategies{i}.P_EV = P_EV_curr;
             strategies{i}.P_Slack = P_Slack; 
             
+            % =========================================================================
+            % [新增] 记录迭代过程中的 SDCI 和 Rho 指标 (用于后续绘图)
+            % =========================================================================
+            if iter == 1
+                strategies{i}.SDCI_History = zeros(Max_Iter, 1);
+                strategies{i}.Rho_History = zeros(Max_Iter, 1);
+            end
+            strategies{i}.SDCI_History(iter) = val_SDCI;
+            strategies{i}.Rho_History(iter) = val_Rho;
+            % =========================================================================
+
             if iter == Max_Iter
                 % 【恢复】保持原始的输出格式
                 fprintf('发电成本: %.2f, 切负荷量: %.2f, 总运行成本: %.2f, CVaR风险: %.2f, rho: %.4f, sdci: %.4f\n', ...
@@ -225,7 +237,7 @@ for i = 1:length(beta_values)
     end
 end
 
-% --- 绘图 B: 风险偏好灵敏度 ---
+% --- 绘图 B: 风险偏好灵敏度分析 ---
 if any(~isnan(b_run_cost))
     figure('Name', '场景B_风险灵敏度', 'Color', 'w', 'Position', [100, 100, 900, 400]);
     yyaxis left; 
@@ -318,6 +330,40 @@ if idx_plot <= length(strategies) && ~isempty(strategies{idx_plot})
         'FontSize', 12, 'FontName', 'Microsoft YaHei', 'LineWidth', 1.2);
     
     print(fig_comp, 'AC与EV时序调度量对比_Optimized.png', '-dpng', '-r600');
+
+    % =========================================================================
+    % [新增] 图 3 & 4: 迭代过程中的指标对比 (Initial vs Final)
+    % =========================================================================
+    if isfield(strategies{idx_plot}, 'SDCI_History') && isfield(strategies{idx_plot}, 'Rho_History')
+        % --- SDCI 对比图 ---
+        fig_sdci = figure('Name', 'SDCI 迭代对比', 'Color', 'w', 'Position', [300, 300, 600, 400]);
+        sdci_vals = [strategies{idx_plot}.SDCI_History(1), strategies{idx_plot}.SDCI_History(end)];
+        bar(sdci_vals, 0.4, 'FaceColor', [0.2 0.6 0.8]);
+        set(gca, 'XTickLabel', {'初始迭代 (Iter 1)', sprintf('最终迭代')}, ...
+            'FontSize', 12, 'FontName', 'Microsoft YaHei');
+        ylabel('SDCI 指标 (互补性)', 'FontSize', 12, 'FontName', 'Microsoft YaHei');
+        grid on;
+        % 添加数值标签
+        text(1:2, sdci_vals, num2str(sdci_vals', '%.4f'), ...
+             'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 12);
+        print(fig_sdci, 'SDCI对比.png', '-dpng', '-r600');
+
+        % --- Rho 对比图 ---
+        fig_rho = figure('Name', 'Rho 迭代对比', 'Color', 'w', 'Position', [400, 400, 600, 400]);
+        rho_vals = [strategies{idx_plot}.Rho_History(1), strategies{idx_plot}.Rho_History(end)];
+        bar(rho_vals, 0.4, 'FaceColor', [0.8 0.4 0.2]);
+        set(gca, 'XTickLabel', {'初始迭代', sprintf('最终迭代')}, ...
+            'FontSize', 12, 'FontName', 'Microsoft YaHei');
+        ylabel('Spearman Rho 指标 (相关性)', 'FontSize', 12, 'FontName', 'Microsoft YaHei');
+        grid on;
+        % 添加数值标签
+        text(1:2, rho_vals, num2str(rho_vals', '%.4f'), ...
+             'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 12);
+        print(fig_rho, 'Rho对比.png', '-dpng', '-r600');
+        
+        fprintf('  >>> 迭代对比图已保存: SDCI_Iteration_Compare.png, Rho_Iteration_Compare.png\n');
+    end
+    % =========================================================================
 end
 
 %% ================= 场景 C: 网络阻塞管理 =================
