@@ -3,7 +3,7 @@ clear; close all; clc;
 
 %% ================= 1. 全局初始化 =================
 fprintf('正在加载场景数据...\n');
-data_file = 'reliable_regulation_domain_1000_mix_01_update.mat';
+data_file = 'reliable_regulation_domain_1000_mix_01_new.mat';
 if ~exist(data_file, 'file')
     error('数据文件缺失！请先运行 main_scenario_generation_diff.m');
 end
@@ -253,7 +253,7 @@ if idx_plot <= length(strategies) && ~isempty(strategies{idx_plot})
         'FontSize', 12, 'FontName', 'Microsoft YaHei', 'LineWidth', 1.2);
     
     % 保存图 2
-    print(fig_comp, 'AC与EV时序出力对比_Optimized.png', '-dpng', '-r600');
+    print(fig_comp, 'AC与EV时序调度量对比_Optimized.png', '-dpng', '-r600');
     fprintf('  >>> 图2已保存: AC与EV时序出力对比_Optimized.png\n');
 end
 %% ================= 场景 C: 网络阻塞管理 =================

@@ -461,3 +461,4 @@ else
 end
 
 fprintf('\n所有绘图程序执行完毕。\n');
+close all;

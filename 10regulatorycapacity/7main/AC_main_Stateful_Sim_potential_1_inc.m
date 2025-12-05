@@ -5,7 +5,7 @@ tic; % 启动一个总计时器
 %% 1. 系统初始化
 rng(2023, 'Threefry'); % 固定随机种子
 T_total = 24; % 总时长（小时）
-dt = 5/60;    % 时间分辨率（小时）
+dt = 60/60;    % 时间分辨率（小时）
 time_points = 0:dt:T_total; % 仿真时间点
 T_steps_total = length(time_points);
 steps_per_hour = round(1/dt);
@@ -222,7 +222,7 @@ for t_idx = 1:T_steps_total
 
         % A. 计算当前单体物理潜力 (用于记录和约束)
         [P_plus, P_minus] = calculateACAdjustmentPotentia(...
-            P_base_i, max(abs(ACbaseP_single(ac_i.T_ja, ac_i.Tset, ac_i.R, ac_i.eta))), 0, ... 
+            P_base_i, 1.1*max(abs(ACbaseP_single(ac_i.T_ja, ac_i.Tset, ac_i.R, ac_i.eta))), 0, ... 
             ac_i.alpha, ac_i.beta, ac_i.gamma,...
             soc_current_i, dt);
 
@@ -367,6 +367,6 @@ results.AC_Up_Individual = AC_Up_Individual;
 results.AC_Down_Individual = AC_Down_Individual;
 
 % 保存文件
-output_mat_name = 'AC_Stateful_Simulation_Results_5min.mat';
+output_mat_name = 'AC_Stateful_Simulation_Results_60min.mat';
 save(output_mat_name, 'results', '-v7.3');
 fprintf('  完整数据已保存至: %s\n', output_mat_name);
