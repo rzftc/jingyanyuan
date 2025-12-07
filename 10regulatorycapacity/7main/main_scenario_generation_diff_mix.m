@@ -1,7 +1,7 @@
 clc; clear; close all;
 
 %% ================= 1. 参数设置 =================
-num_scenarios = 1000;    % 场景生成数量
+num_scenarios = 3000;    % 场景生成数量
 alpha = 0.05;           % 置信水平
 
 % 仿真时间设置
@@ -144,7 +144,7 @@ Reliable_EV_Energy_Need = quantile(Scenarios_EV_Energy_Total, 1-alpha);
 fprintf('提取完成。EV 最小能量需求: %.2f kWh\n', Reliable_EV_Energy_Need);
 
 %% ================= 5. 结果保存 (保持不变) =================
-save('reliable_regulation_domain_1000_mix_01.mat', ...
+save('reliable_regulation_domain_3000_mix.mat', ...
     'Scenarios_AC_Up', 'Scenarios_AC_Down', ...
     'Scenarios_EV_Up', 'Scenarios_EV_Down', ...
     'Reliable_AC_Up', 'Reliable_AC_Down', ...

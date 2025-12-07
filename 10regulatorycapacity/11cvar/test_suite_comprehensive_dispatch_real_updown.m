@@ -8,7 +8,7 @@ clear; close all; clc;
 
 %% ================= 1. 全局初始化 =================
 fprintf('正在加载场景数据...\n');
-data_file = 'reliable_regulation_domain_1000_mix_01_new2.mat';
+data_file = 'reliable_regulation_domain_3000_mix.mat';
 if ~exist(data_file, 'file')
     error('数据文件缺失！请先运行 main_scenario_generation_diff.m');
 end
@@ -159,7 +159,7 @@ for i = 1:length(beta_values)
     
     for iter = 1:Max_Iter
         % 1. 构建模型 (注意：construct函数内部不包含dt乘法，需要在外部处理f和H)
-        [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_robust_network_improve(...
+        [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fast(...
             P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
             Physical_AC_Up, Physical_EV_Up, ... 
             cost_params, risk_p, net_params);
@@ -366,7 +366,7 @@ net_params_C.LineLimit(1) = limit_val;
 fprintf('  - 制造阻塞: 线路1限额 %.2f MW\n', limit_val);
 
 risk_p.beta = 10; 
-[H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_robust_network_improve(...
+[H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fast(...
     P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, Physical_AC_Up, Physical_EV_Up, ...
     cost_params, risk_p, net_params_C);
 
