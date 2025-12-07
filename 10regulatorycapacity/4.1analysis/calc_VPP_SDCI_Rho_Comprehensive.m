@@ -4,6 +4,7 @@
 % 2. 计算不同激励电价下 AC 和 EV 集群的互补性 (SDCI) 和相关性 (Rho)。
 % 3. 绘制共 8 张分析图表 (4张时长对比 + 4张电价趋势)。
 %    [修改] 保存为高DPI PNG，无标题，中文文件名和图例。
+%    [修改] 统一时间轴：将 AC 数据 (0:24) 转化为 (6:30)，与 EV 数据对齐。
 
 clear; close all; clc;
 
@@ -42,7 +43,30 @@ for i = 1:num_dt
         [ac_up, ac_down] = load_ac_data(ac_files_dt{i});
         [ev_up, ev_down] = load_ev_data(ev_files_dt{i});
         
-        % 数据对齐与预处理
+        % ==================== [修改] 时间轴对齐逻辑 ====================
+        % AC 原数据: 00:00 -> 24:00 (24h)
+        % EV 原数据: 06:00 -> 30:00 (24h)
+        % 操作: 将 AC 数据移位，使其变为 06:00 -> 30:00
+        % 方法: 新 AC = [原AC(06:00-24:00); 原AC(00:00-06:00)]
+        
+        len_ac = length(ac_up);
+        % 计算对应 6 小时的数据点数 (假设 len_ac 对应 24 小时)
+        idx_6h = round(len_ac * (6/24));
+        
+        if idx_6h > 0 && idx_6h < len_ac
+            % 拼接数据
+            ac_up_shifted = [ac_up(idx_6h+1:end); ac_up(1:idx_6h)];
+            ac_down_shifted = [ac_down(idx_6h+1:end); ac_down(1:idx_6h)];
+            
+            ac_up = ac_up_shifted;
+            ac_down = ac_down_shifted;
+            fprintf('  已执行时间轴对齐：AC 数据从 0:24 调整为 6:30 (循环移位 %d 点)\n', idx_6h);
+        else
+            warning('  AC 数据长度异常，跳过时间轴对齐。');
+        end
+        % ===============================================================
+        
+        % 数据长度截取 (取两者最小值，防止微小误差)
         [ac_up, ev_up] = align_data(ac_up, ev_up);
         [ac_down, ev_down] = align_data(abs(ac_down), abs(ev_down)); % 下调取绝对值
         
@@ -93,11 +117,9 @@ for k = 1:num_prices
     current_p = price_list(k);
     
     % 构造文件名
-    % AC 文件名格式: AC_Stateful_Simulation_Results_Price_5.6.mat
     ac_file_p = sprintf('AC_Stateful_Simulation_Results_Price_%.1f.mat', current_p);
     
-    % EV 文件名格式: results_incentive_5.56.mat (根据您的实际文件名调整)
-    % 注意：请确保此处的文件名格式与您实际保存的一致，如果不一致请修改 sprintf
+    % EV 文件名格式 (根据您的实际文件名调整)
     ev_file_p = sprintf('results_incentive_%.2f.mat', current_p); 
     
     fprintf('\n--- 正在处理价格 P = %.2f ---\n', current_p);
@@ -107,9 +129,8 @@ for k = 1:num_prices
         fprintf('  [警告] AC文件缺失: %s，跳过此价格点。\n', ac_file_p);
         continue;
     end
-    % 如果EV文件命名不同，请在此处临时处理或确保文件存在
     if ~exist(ev_file_p, 'file')
-        % 尝试另一种常见的命名格式，如果您的EV代码有变动
+        % 尝试另一种常见的命名格式
         ev_file_p_alt = sprintf('results_chunk_ev_price_%.1f.mat', current_p);
         if exist(ev_file_p_alt, 'file')
             ev_file_p = ev_file_p_alt;
@@ -123,6 +144,21 @@ for k = 1:num_prices
         % 加载文件
         [ac_up, ac_down] = load_ac_data(ac_file_p);
         [ev_up, ev_down] = load_ev_data(ev_file_p);
+        
+        % ==================== [修改] 时间轴对齐逻辑 ====================
+        % 同样应用到价格循环中
+        len_ac = length(ac_up);
+        idx_6h = round(len_ac * (6/24)); 
+        
+        if idx_6h > 0 && idx_6h < len_ac
+            ac_up_shifted = [ac_up(idx_6h+1:end); ac_up(1:idx_6h)];
+            ac_down_shifted = [ac_down(idx_6h+1:end); ac_down(1:idx_6h)];
+            
+            ac_up = ac_up_shifted;
+            ac_down = ac_down_shifted;
+            % fprintf('  已对齐 AC 时间轴 (6:30)。\n');
+        end
+        % ===============================================================
         
         % 数据对齐与预处理
         [ac_up, ev_up] = align_data(ac_up, ev_up);
@@ -212,109 +248,80 @@ function [d1, d2] = align_data(d1, d2)
     d2 = d2(1:len);
 end
 
-% --- 绘图：柱状图 (用于时长对比) - [修改]: 无标题，中文名，高DPI ---
+% --- 绘图：柱状图 (用于时长对比) ---
 function plot_bar_chart(x_labels, y_data, ylabel_str, file_name_cn)
     figure('Name', file_name_cn, 'Color', 'w', 'Position', [200, 200, 600, 450]);
     b = bar(y_data);
     b.FaceColor = 'flat';
-    % 注意：这里假设有3个柱子，如果数据量不同可能需要调整
+    % 注意：这里假设有3个柱子
     if length(y_data) >= 3
         b.CData(1,:) = [0.2 0.6 0.8]; % 5min 蓝
         b.CData(2,:) = [0.2 0.7 0.5]; % 15min 绿
         b.CData(3,:) = [0.8 0.4 0.2]; % 60min 橙
     else
-        % 简单的颜色回退策略
         b.FaceColor = [0.2 0.6 0.8];
     end
     
     set(gca, 'XTickLabel', x_labels, 'FontSize', 12, 'FontName', 'Microsoft YaHei');
     ylabel(ylabel_str, 'FontName', 'Microsoft YaHei', 'FontSize', 12);
     
-    % 移除标题
-    % title(title_str); 
-    
     grid on;
     
-    % --- [修正1] 动态添加数值标签 (适配正负数) ---
+    % --- 动态添加数值标签 ---
     xtips = b.XEndPoints;
     ytips = b.YEndPoints;
     labels = string(round(b.YData, 4));
     
     for k = 1:length(ytips)
         if ytips(k) >= 0
-            va = 'bottom'; % 正数显示在柱顶上方
-            v_offset = 0.01 * max(abs(y_data)); % 可选微调
+            va = 'bottom'; v_offset = 0.01 * max(abs(y_data));
         else
-            va = 'top';    % 负数显示在柱底下方
-            v_offset = -0.01 * max(abs(y_data));
+            va = 'top'; v_offset = -0.01 * max(abs(y_data));
         end
-        
         text(xtips(k), ytips(k) + v_offset, labels(k), ...
             'HorizontalAlignment', 'center', ...
             'VerticalAlignment', va, ...
             'FontSize', 10, 'FontName', 'Arial'); 
     end
 
-    % --- [修正2] 边界美化 (确保包含0轴且适应负数) ---
-    y_max = max(y_data);
-    y_min = min(y_data);
-    padding = 0.15; % 15% 的留白
-    
-    % 计算绝对最大值用于确定留白尺度
-    abs_max = max(abs(y_data));
-    if abs_max == 0, abs_max = 1; end
+    % --- 边界美化 ---
+    y_max = max(y_data); y_min = min(y_data);
+    padding = 0.15; abs_max = max(abs(y_data)); if abs_max == 0, abs_max = 1; end
     margin = abs_max * padding;
     
     if y_min >= 0
-        % 全正数：0 到 max+margin
         ylim([0, y_max + margin]);
     elseif y_max <= 0
-        % 全负数：min-margin 到 0
         ylim([y_min - margin, 0]);
     else
-        % 正负混合：min-margin 到 max+margin
         ylim([y_min - margin, y_max + margin]);
     end
     
-    % 绘制 0 轴线 (增强视觉效果)
     yline(0, 'k-', 'LineWidth', 1.0);
-    
-    % 添加中文图例
     legend({'计算数值'}, 'Location', 'best', 'FontName', 'Microsoft YaHei');
 
-    % 保存为高DPI PNG
     print(gcf, [file_name_cn '.png'], '-dpng', '-r300');
     fprintf('  已保存图片: %s.png\n', file_name_cn);
 end
 
-% --- 绘图：折线图 (用于电价趋势) - [修改]: 无标题，中文名，高DPI ---
+% --- 绘图：折线图 (用于电价趋势) ---
 function plot_line_chart(x_data, y_data, xlabel_str, ylabel_str, line_color, file_name_cn)
     figure('Name', file_name_cn, 'Color', 'w', 'Position', [300, 300, 600, 450]);
-    
-    % 过滤掉 NaN 数据
     valid_idx = ~isnan(y_data);
     
     plot(x_data(valid_idx), y_data(valid_idx), '-o', ...
         'LineWidth', 2, 'MarkerSize', 6, ...
         'Color', line_color, 'MarkerFaceColor', line_color, ...
-        'DisplayName', '指标趋势'); % 设置DisplayName用于图例
+        'DisplayName', '指标趋势'); 
     
     xlabel(xlabel_str, 'FontName', 'Microsoft YaHei', 'FontSize', 12);
     ylabel(ylabel_str, 'FontName', 'Microsoft YaHei', 'FontSize', 12);
     
-    % 移除标题
-    % title(title_str);
-    
     grid on;
     set(gca, 'FontSize', 12, 'FontName', 'Microsoft YaHei');
-    
-    % 添加中文图例
     legend('show', 'Location', 'best', 'FontName', 'Microsoft YaHei');
-    
-    % 简单的边界美化
     xlim([min(x_data)-2, max(x_data)+2]);
     
-    % 保存为高DPI PNG
     print(gcf, [file_name_cn '.png'], '-dpng', '-r300');
     fprintf('  已保存图片: %s.png\n', file_name_cn);
 end
