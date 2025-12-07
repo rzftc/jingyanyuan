@@ -245,16 +245,34 @@ for i = 1:length(beta_values)
     end
 end
 
-% --- 绘图 B ---
+%% 
+% --- 绘图 B: 风险偏好灵敏度分析 (含数据标注) ---
 if any(~isnan(b_run_cost))
     figure('Name', '场景B_风险灵敏度', 'Color', 'w', 'Position', [100, 100, 900, 400]);
+    
+    % --- 左轴：切负荷 (柱状图) ---
     yyaxis left; 
-    bar(1:3, b_slack_sum, 0.5, 'FaceColor', [0.8 0.3 0.3]); 
-    ylabel('总切负荷电量 (MWh)'); % 修改单位
+    b = bar(1:3, b_slack_sum, 0.5, 'FaceColor', [0.8 0.3 0.3]); 
+    ylabel('总切负荷电量 (MWh)'); 
     set(gca, 'XTick', 1:3, 'XTickLabel', beta_values);
+    % 添加左轴数据标注
+    for i = 1:length(b_slack_sum)
+        text(i, b_slack_sum(i), sprintf('%.2f', b_slack_sum(i)), ...
+            'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', ...
+            'FontSize', 12, 'Color', [0.6 0.1 0.1], 'FontWeight', 'bold');
+    end
+    
+    % --- 右轴：风险 (折线图) ---
     yyaxis right; 
     plot(1:3, b_risk_val, 'b-o', 'LineWidth', 2, 'MarkerSize', 8); 
-    ylabel('CVaR 潜在违约风险 (MW)'); % 风险通常指功率缺口
+    ylabel('CVaR 潜在违约风险 (MW)'); 
+    % 添加右轴数据标注
+    for i = 1:length(b_risk_val)
+        text(i, b_risk_val(i), sprintf('%.2f', b_risk_val(i)), ...
+            'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', ...
+            'FontSize', 12, 'Color', 'b', 'FontWeight', 'bold');
+    end
+    
     xlabel('风险厌恶系数 \beta');
     legend('切负荷量 (安全性)', '潜在违约风险 (经济性)', 'Location', 'best');
     grid on;
@@ -410,27 +428,3 @@ if ~isempty(strategies{1}) && ~isempty(strategies{3})
 end
 
 fprintf('\n所有测试结束。\n');
-
-%% ================= 本地辅助函数 =================
-function SDCI = calculate_SDCI_local(n_AC, n_EV, deltaP_AC, deltaP_EV)
-    AC = n_AC .* deltaP_AC;
-    EV = n_EV .* deltaP_EV;
-    min_vals = min(AC, EV);
-    max_vals = max(AC, EV);
-    total_max = sum(max_vals);
-    if total_max == 0
-        SDCI = 0;
-    else
-        SDCI = sum(min_vals) / total_max;
-    end
-end
-
-function rho = calculate_Rho_local(n_AC, deltaP_AC, n_EV, deltaP_EV)
-    AC_series = n_AC .* deltaP_AC;
-    EV_series = n_EV .* deltaP_EV;
-    if length(AC_series) > 2
-        rho = corr(AC_series, EV_series, 'Type', 'Spearman');
-    else
-        rho = 0;
-    end
-end
