@@ -1,10 +1,3 @@
-%% test_suite_comprehensive_dispatch_realPF.m
-% 修正说明：
-% 1. [核心修正] 成本计算引入时间积分 (dt)，将单位从 元/MW 修正为 元/MWh。
-% 2. [核心修正] 调整二次成本系数 c2，使其符合物理实际，避免天文数字成本。
-% 3. [核心修正] 将功率单位统一为 MW。
-% 4. [本次修正] 调节指令改为每1小时变化一次，且正负方向符合国网调度规律 (8-12/14-22上调，其余下调)。
-
 clear; close all; clc;
 
 %% ================= 1. 全局初始化 =================
@@ -48,18 +41,20 @@ Reliable_EV_Down = abs(Reliable_EV_Down(:)) * unit_scale;
 
 % --- [新增] 加载并处理基线功率 ---
 if ~exist('Reliable_AC_Base', 'var') || ~exist('Reliable_EV_Base', 'var')
+    % 如果 mat 文件是旧版，没有基线数据，给予警告或报错
     error('数据文件中缺失 AC/EV 基线功率数据 (Reliable_AC_Base)。请重新生成数据。');
 end
 Reliable_AC_Base = Reliable_AC_Base(:) * unit_scale; % T x 1 (MW)
 Reliable_EV_Base = Reliable_EV_Base(:) * unit_scale; % T x 1 (MW)
 
 % --- [修改] 成本参数 (符合中国电力市场现状) ---
+% 说明：成本计算公式将改为 sum( (c1*P + c2*P^2) * dt )
 % 单位：元/MWh
-cost_params.c1_ac = 500;      % 500 元/MWh - 空调调节成本
-cost_params.c2_ac = 50;       % 50 元/(MW)^2h 
-cost_params.c1_ev = 400;      % 400 元/MWh - EV调节成本
+cost_params.c1_ac = 500;      % 500 元/MWh (0.5元/kWh) - 空调调节成本
+cost_params.c2_ac = 50;       % 50 元/(MW)^2h - 二次项系数大幅降低，避免成本失真
+cost_params.c1_ev = 400;      % 400 元/MWh (0.4元/kWh) - EV调节成本(略低于AC)
 cost_params.c2_ev = 50;       % 50 元/(MW)^2h
-cost_params.c_slack = 30000;  % 30,000 元/MWh - 切负荷惩罚 (VoLL)
+cost_params.c_slack = 30000;  % 30,000 元/MWh (30元/kWh) - 切负荷惩罚 (VoLL)
 % 火电与切负荷成本 (用于 construct_risk_constrained_qp_fast 内部)
 cost_params.c1_gen = 800;      cost_params.c2_gen = 80;     % 火电调节成本
 cost_params.c1_shed = 30000;   cost_params.c2_shed = 0;     % 切负荷惩罚
@@ -86,6 +81,8 @@ direction_signal = zeros(T_steps, 1); % 用于存储展开后的方向信号 (�
 current_block_demand = 0;             % 当前块的需求值缓存
 
 fprintf('生成混合需求: 指令每 1 小时更新一次 (符合国网峰谷规律)。\n');
+fprintf('  - 上调 (Up, >0): 增加用电 (填谷)\n');
+fprintf('  - 下调 (Down, <0): 减少用电 (削峰)\n');
 
 for t = 1:T_steps
     % 1. 获取当前时刻 (绝对时间，例如 6.5, 14.0)
@@ -93,22 +90,25 @@ for t = 1:T_steps
     current_hour_of_day = mod(floor(current_time_abs), 24); % 获取当前小时数 (0-23)
     
     % 2. 判断调节方向 (State Grid Scheduling Pattern)
-    % 典型的两峰一谷（或午间低谷）
-    % 上调 (Up/削峰/增加出力): 08:00-12:00, 14:00-22:00
-    % 下调 (Down/填谷/减少出力): 22:00-08:00 (夜间), 12:00-14:00 (午间光伏/低谷)
+    % 用户定义：上调=增加用电，下调=减少用电
     
+    % 高峰时段 (Peak): 08:00-12:00, 14:00-22:00
+    % 电网需求：减少负荷 (削峰) -> 调用用户的 [下调潜力] (Down)
     if (current_hour_of_day >= 8 && current_hour_of_day < 12) || ...
        (current_hour_of_day >= 14 && current_hour_of_day < 22)
-        is_up_regulation = true;
-        direction_signal(t) = 1;
+        use_up_potential = false; 
+        direction_signal(t) = -1; % 负号表示减少用电 (下调)
+        
+    % 低谷时段 (Valley): 22:00-08:00, 12:00-14:00
+    % 电网需求：增加负荷 (填谷) -> 调用用户的 [上调潜力] (Up)
     else
-        is_up_regulation = false;
-        direction_signal(t) = -1;
+        use_up_potential = true;
+        direction_signal(t) = 1;  % 正号表示增加用电 (上调)
     end
     
     % 3. 根据方向映射有效数据
-    if is_up_regulation
-        % 上调：增加出力 -> 使用 Up 数据
+    if use_up_potential
+        % 使用上调数据 (增加用电)
         Effective_Scen_AC(t,:) = Scenarios_AC_Up(t,:);
         Effective_Scen_EV(t,:) = Scenarios_EV_Up(t,:);
         Effective_Phys_AC(t) = Physical_AC_Up(t);
@@ -116,7 +116,7 @@ for t = 1:T_steps
         Effective_Reliable_AC(t) = Reliable_AC_Up(t);
         Effective_Reliable_EV(t) = Reliable_EV_Up(t);
     else
-        % 下调：减少出力 -> 使用 Down 数据
+        % 使用下调数据 (减少用电)，取绝对值计算
         Effective_Scen_AC(t,:) = abs(Scenarios_AC_Down(t,:));
         Effective_Scen_EV(t,:) = abs(Scenarios_EV_Down(t,:));
         Effective_Phys_AC(t) = Physical_AC_Down(t);
@@ -132,7 +132,6 @@ for t = 1:T_steps
         cap_phy = Effective_Phys_AC(t) + Effective_Phys_EV(t);
         
         % 需求 = 可靠容量 + 50% * (风险区间 * 随机因子)
-        % 这里的随机因子保留，用于模拟该小时内具体的调度强度
         current_block_demand = cap_rel + 0.50 * (cap_phy - cap_rel) * rand();
     end
     
@@ -145,6 +144,8 @@ Scenarios_AC_Up = Effective_Scen_AC;
 Scenarios_EV_Up = Effective_Scen_EV;
 Physical_AC_Up  = Effective_Phys_AC;
 Physical_EV_Up  = Effective_Phys_EV;
+Reliable_AC_Up  = Effective_Reliable_AC;
+Reliable_EV_Up  = Effective_Reliable_EV;
 
 % --- 网络参数 ---
 N_bus = 5; N_line = 6;
@@ -250,7 +251,7 @@ for i = 1:length(beta_values)
     
     risk_p.beta = beta;
     risk_p.confidence = 0.95;
-    risk_p.rho_pen = 800; 
+    risk_p.rho_pen = 500; 
     
     P_AC_prev = zeros(T_steps, 1);
     P_EV_prev = zeros(T_steps, 1);
@@ -399,7 +400,7 @@ if idx_plot <= length(strategies) && ~isempty(strategies{idx_plot})
     h_area(3).FaceColor = [0.92, 0.69, 0.13]; h_area(3).EdgeColor = 'none'; % Gen
     h_area(4).FaceColor = [0.85, 0.33, 0.10]; h_area(4).EdgeColor = 'none'; h_area(4).FaceAlpha = 0.8; % Shed
     plot(t_axis, P_Demand_plot, 'k--', 'LineWidth', 2.0, 'DisplayName', '电网总需求');
-    ylabel('功率 (MW) [正=上调, 负=下调]', 'FontSize', 14, 'FontName', 'Microsoft YaHei');
+    ylabel('功率 (MW) [正=增加用电, 负=减少用电]', 'FontSize', 14, 'FontName', 'Microsoft YaHei');
     legend([h_area(1), h_area(2), h_area(3), h_area(4)], ...
            {'空调 (AC)', '电动汽车 (EV)', '火电调节 (Gen)', '切负荷 (Shed)'}, ...
            'Location', 'northwest', 'FontSize', 12, 'FontName', 'Microsoft YaHei');
@@ -486,12 +487,12 @@ if ~isempty(strategies{1}) && ~isempty(strategies{3})
     viol_robust  = calc_viol(strategies{3}.P_AC, strategies{3}.P_EV);
     
     fprintf('  - 中性策略(Beta=0) 违约量: %.2f MW\n', viol_neutral);
-    fprintf('  - 规避策略(Beta=10) 违约量: %.2f MW\n', viol_robust);
+    fprintf('  - 规避策略(Beta=100) 违约量: %.2f MW\n', viol_robust);
     
     figure('Name', '场景D_鲁棒性', 'Color', 'w', 'Position', [600, 300, 500, 400]);
     b = bar([viol_neutral, viol_robust], 0.5);
     b.FaceColor = 'flat'; b.CData(1,:) = [0.8 0.2 0.2]; b.CData(2,:) = [0.2 0.6 0.2];
-    set(gca, 'XTickLabel', {'中性 (\beta=0)', '规避 (\beta=10)'});
+    set(gca, 'XTickLabel', {'中性 (\beta=0)', '规避 (\beta=100)'});
     ylabel('极端场景实际违约量 (MW)');
     grid on;
     print(gcf, '极端场景鲁棒性测试.png', '-dpng', '-r300');
