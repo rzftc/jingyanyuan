@@ -1,23 +1,25 @@
-%% 修正说明：
-% 1. [核心修正] 成本计算引入时间积分 (dt)，将单位从 元/MW 修正为 元/MWh。
-% 2. [核心修正] 调整二次成本系数 c2，使其符合物理实际，避免天文数字成本。
-% 3. [核心修正] 将功率单位统一为 MW。
-% 4. 物理边界、需求生成、绘图逻辑保持不变。
+% 修改说明：
+% 1. 功率平衡：P_AC + P_EV + P_Gen + P_Shed = P_req
+% 2. 物理约束升级：
+%    - 严格考虑 AC/EV 基线功率的节点映射
+%    - 重新计算包含 AC/EV 基线的线路背景潮流
+%    - 火电调节上限 = 火电装机容量 - (刚性负荷 + AC基线 + EV基线)
+%    - 切负荷上限 = 刚性负荷 + AC基线 + EV基线
+% 3. 调度优先级：VPP (最廉价) -> 火电 -> 切负荷 (最昂贵)
 
 clear; close all; clc;
 
 %% ================= 1. 全局初始化 =================
 fprintf('正在加载场景数据...\n');
-data_file = 'reliable_regulation_domain_1000_mix_01_new2.mat';
+data_file = 'reliable_regulation_domain_1000_mix_pbase.mat';
 if ~exist(data_file, 'file')
     error('数据文件缺失！请先运行 main_scenario_generation_diff.m');
 end
 load(data_file);
 
-% 数据维度对齐
 [T_steps, N_scenarios] = size(Scenarios_AC_Up);
 
-% --- [修改] 时间参数 ---
+% --- 时间参数 ---
 if exist('time_points', 'var')
     t_axis = time_points;
 else
@@ -27,10 +29,10 @@ end
 dt = 5/60; % 时间步长 (小时)
 fprintf('时间步长 dt = %.4f 小时\n', dt);
 
-% --- [修改] 单位转换系数 (kW -> MW) ---
+% --- 单位转换 (kW -> MW) ---
 unit_scale = 1/1000; 
 
-% --- 修正1: 物理边界设置 (提取双向边界) & [修改] 单位转换 ---
+% --- 物理边界与数据预处理 ---
 Scenarios_AC_Up = Scenarios_AC_Up * unit_scale; 
 Scenarios_EV_Up = Scenarios_EV_Up * unit_scale; 
 Physical_AC_Up = max(Scenarios_AC_Up, [], 2);
@@ -45,21 +47,26 @@ Physical_EV_Down = max(abs(Scenarios_EV_Down), [], 2);
 Reliable_AC_Down = abs(Reliable_AC_Down(:)) * unit_scale;
 Reliable_EV_Down = abs(Reliable_EV_Down(:)) * unit_scale;
 
-% --- [修改] 成本参数 (符合中国电力市场现状) ---
-% 说明：成本计算公式将改为 sum( (c1*P + c2*P^2) * dt )
-% 单位：元/MWh
-cost_params.c1_ac = 500;      % 500 元/MWh (0.5元/kWh) - 空调调节成本
-cost_params.c2_ac = 50;       % 50 元/(MW)^2h - 二次项系数大幅降低，避免成本失真
-cost_params.c1_ev = 400;      % 400 元/MWh (0.4元/kWh) - EV调节成本(略低于AC)
-cost_params.c2_ev = 50;       % 50 元/(MW)^2h
-cost_params.c_slack = 30000;  % 30,000 元/MWh (30元/kWh) - 切负荷惩罚 (VoLL)
+% --- [新增] 加载并处理基线功率 ---
+if ~exist('Reliable_AC_Base', 'var') || ~exist('Reliable_EV_Base', 'var')
+    % 如果 mat 文件是旧版，没有基线数据，给予警告或报错
+    error('数据文件中缺失 AC/EV 基线功率数据 (Reliable_AC_Base)。请重新生成数据。');
+end
+Reliable_AC_Base = Reliable_AC_Base(:) * unit_scale; % T x 1 (MW)
+Reliable_EV_Base = Reliable_EV_Base(:) * unit_scale; % T x 1 (MW)
 
-% --- 互补性与相关性优化权重 ---
+% --- [成本参数] 严格的调度优先级 ---
+cost_params.c1_ac = 500;       cost_params.c2_ac = 50;  
+cost_params.c1_ev = 400;       cost_params.c2_ev = 50;  
+cost_params.c1_gen = 800;      cost_params.c2_gen = 80;     % 火电调节成本
+cost_params.c1_shed = 30000;   cost_params.c2_shed = 0;     % 切负荷惩罚
+
+% --- 互补性与相关性权重 ---
 lambda_SDCI = 10;   
 lambda_Rho  = 10;   
 Max_Iter    = 3;    
 
-% --- 修正2: 构造混合需求 ---
+% --- 构造混合需求 ---
 rng(105); 
 P_grid_demand = zeros(T_steps, 1);
 Effective_Scen_AC = zeros(T_steps, N_scenarios);
@@ -73,11 +80,7 @@ direction_signal = randn(T_steps, 1);
 
 for t = 1:T_steps
     is_up_regulation = direction_signal(t) >= 0;
-    
     if is_up_regulation
-        % 上调
-        cap_rel = Reliable_AC_Up(t) + Reliable_EV_Up(t);
-        cap_phy = Physical_AC_Up(t) + Physical_EV_Up(t);
         Effective_Scen_AC(t,:) = Scenarios_AC_Up(t,:);
         Effective_Scen_EV(t,:) = Scenarios_EV_Up(t,:);
         Effective_Phys_AC(t) = Physical_AC_Up(t);
@@ -85,9 +88,6 @@ for t = 1:T_steps
         Effective_Reliable_AC(t) = Reliable_AC_Up(t);
         Effective_Reliable_EV(t) = Reliable_EV_Up(t);
     else
-        % 下调
-        cap_rel = Reliable_AC_Down(t) + Reliable_EV_Down(t);
-        cap_phy = Physical_AC_Down(t) + Physical_EV_Down(t);
         Effective_Scen_AC(t,:) = abs(Scenarios_AC_Down(t,:));
         Effective_Scen_EV(t,:) = abs(Scenarios_EV_Down(t,:));
         Effective_Phys_AC(t) = Physical_AC_Down(t);
@@ -96,8 +96,9 @@ for t = 1:T_steps
         Effective_Reliable_EV(t) = Reliable_EV_Down(t);
     end
     
-    % 需求生成：在可靠容量基础上增加波动，模拟高风险场景
-    req_magnitude = cap_rel + 0.40 * (cap_phy - cap_rel) * rand();
+    cap_rel = Effective_Reliable_AC(t) + Effective_Reliable_EV(t);
+    cap_phy = Effective_Phys_AC(t) + Effective_Phys_EV(t);
+    req_magnitude = cap_rel + 0.60 * (cap_phy - cap_rel) * rand(); 
     P_grid_demand(t) = req_magnitude;
 end
 
@@ -105,8 +106,6 @@ Scenarios_AC_Up = Effective_Scen_AC;
 Scenarios_EV_Up = Effective_Scen_EV;
 Physical_AC_Up  = Effective_Phys_AC;
 Physical_EV_Up  = Effective_Phys_EV;
-Reliable_AC_Up  = Effective_Reliable_AC;
-Reliable_EV_Up  = Effective_Reliable_EV;
 
 % --- 网络参数 ---
 N_bus = 5; N_line = 6;
@@ -124,41 +123,81 @@ end
 B_bus_reduced = B_bus(2:end, 2:end);
 PTDF_reduced = B_line(:, 2:end) / B_bus_reduced;
 net_params.PTDF = [zeros(N_line, 1), PTDF_reduced];
-net_params.AcDist = [0.1; 0.15; 0.3; 0.3; 0.15];
+
+% --- [关键部分]：物理背景潮流与实时容量计算 ---
+
+% 0. 定义节点分布向量
+net_params.AcDist = [0.1; 0.15; 0.3; 0.3; 0.15]; 
 net_params.EvDist = [0.0; 0.2; 0.4; 0.4; 0.0];
+net_params.GenDist = [0.25; 0; 0; 0; 0.75];     % 火电节点 1, 5
+net_params.ShedDist = [0; 0.3; 0.3; 0.4; 0];    % 负荷节点 2, 3, 4
 
-% 1. 定义标准工况 (MW)
-Base_Gen  = [250;    0;    0;    0;  750]; % G1, G5 发电
-Base_Load = [  0;  300;  300;  400;    0]; % L2, L3, L4 负荷
-P_inj_peak = Base_Gen - Base_Load;
+% 1. 基础刚性负荷 (Fixed Load)
+Base_Load_Fixed = [0; 300; 300; 400; 0]; % (MW)
 
-% 2. 定义日负荷曲线形状 (峰值在第19小时)
-% T_steps 已经在前面定义
+% 2. 生成日负荷曲线 (用于刚性负荷)
 t_vec = linspace(0, 24, T_steps);
 load_curve = 0.55 + 0.45 * exp(-((t_vec - 19).^2) / 12) + 0.1 * exp(-((t_vec - 10).^2) / 20);
-load_curve = load_curve / max(load_curve); % 归一化
+load_curve = load_curve(:) / max(load_curve);
 
-% 3. 计算时变基础潮流
-Flow_peak = net_params.PTDF * P_inj_peak; % (N_line x 1)
-net_params.BaseFlow = Flow_peak * load_curve;  % (N_line x T)
-% --- [关键修正：动态设置线路限额] ---
-% 计算所有时刻、所有线路的最大背景潮流
+% 3. [新增] 循环计算每一时刻的背景潮流和系统总负荷
+P_inj_t = zeros(N_bus, T_steps);       % 节点净注入矩阵
+Total_System_Load_t = zeros(T_steps, 1); % 系统总实时负荷
+
+for t = 1:T_steps
+    % (1) 计算各节点上的实时负荷
+    % 刚性负荷 (按曲线波动)
+    P_Fixed_Node = Base_Load_Fixed * load_curve(t); 
+    
+    % AC/EV 基线负荷 (按分布向量映射)
+    P_AC_Node = net_params.AcDist * Reliable_AC_Base(t);
+    P_EV_Node = net_params.EvDist * Reliable_EV_Base(t);
+    
+    % 该时刻各节点总负荷
+    P_Load_Node_Total = P_Fixed_Node + P_AC_Node + P_EV_Node;
+    
+    % (2) 记录系统总负荷 (用于计算切负荷上限和火电基线)
+    Total_System_Load_t(t) = sum(P_Load_Node_Total);
+    
+    % (3) 计算各节点发电 (假设火电完全平衡负荷)
+    % 总发电量 = 总负荷
+    P_Gen_Node_Total = net_params.GenDist * Total_System_Load_t(t);
+    
+    % (4) 计算节点净注入 (Generation - Load)
+    P_inj_t(:, t) = P_Gen_Node_Total - P_Load_Node_Total;
+end
+
+% 4. 计算包含 AC/EV 基线的背景潮流 (N_line x T)
+net_params.BaseFlow = net_params.PTDF * P_inj_t;
+
+% 5. 设置线路限额 (基于最大背景潮流)
 max_base_flow = max(max(abs(net_params.BaseFlow)));
-fprintf('系统最大背景潮流: %.2f MW\n', max_base_flow);
+net_params.LineLimit = ones(N_line, 1) * (max_base_flow + 5.0);
 
-% 将线路限额设定为：max(250, 最大背景潮流 * 1.2)
-% 这样既保留了原定的250MW下限，又防止了背景潮流导致的初始越限
-% safe_limit = max(250, max_base_flow * 1.2); 
-safe_limit = max_base_flow + 2.0;
-net_params.LineLimit = ones(N_line, 1) * safe_limit;
+% 6. 计算实时的调节容量物理上限
 
-fprintf('初始化完成。\n');
+% 火电装机容量 (MW) - G1(350) + G5(900)
+Gen_Capacity_Installed = 1005; 
+
+% 火电调节能力(上调) = 装机容量 - 当前基线出力
+% 当前基线出力 = Total_System_Load_t (因为 Gen = Load)
+R_Gen_Max = Gen_Capacity_Installed - Total_System_Load_t;
+R_Gen_Max = max(0, R_Gen_Max); % 物理保护
+
+% 切负荷能力 = 当前总负荷
+R_Shed_Max = Total_System_Load_t;
+
+fprintf('物理约束计算完成：\n');
+fprintf('  - 系统峰值总负荷 (含AC/EV): %.2f MW\n', max(Total_System_Load_t));
+fprintf('  - 线路最大背景潮流: %.2f MW\n', max_base_flow);
+fprintf('  - 峰值时刻火电备用: %.2f MW\n', min(R_Gen_Max));
+
 
 %% ================= 场景 B: 风险偏好灵敏度分析 =================
-fprintf('\n>>> 场景 B: 风险偏好灵敏度分析 <<<\n');
+fprintf('\n>>> 场景 B: 风险偏好灵敏度分析 (含火电与切负荷) <<<\n');
 x_ticks_set = [6, 12, 18, 24, 30];
 x_labels_set = {'06:00', '12:00', '18:00', '24:00', '06:00(+1)'};
-beta_values = [0, 10, 100];
+beta_values = [0, 1, 10];
 b_run_cost = nan(1, length(beta_values));
 b_risk_val = nan(1, length(beta_values));
 b_slack_sum = nan(1, length(beta_values));
@@ -172,45 +211,32 @@ for i = 1:length(beta_values)
     
     risk_p.beta = beta;
     risk_p.confidence = 0.95;
-    risk_p.rho_pen = 50 * 1000 * unit_scale; % 保持惩罚的相对量级 (这里直接设为50也行，取决于对风险项的定义)
-    % 修正：为了让风险项与新的成本项(元)匹配，rho_pen 需要重新标定。
-    % 假设 rho_pen 是“每MW越限的惩罚价格”，设为 5000 元/MW 比较合适(略高于成本，低于切负荷)
-    risk_p.rho_pen = 5000; 
+    risk_p.rho_pen = 800; 
     
     P_AC_prev = zeros(T_steps, 1);
     P_EV_prev = zeros(T_steps, 1);
     
     for iter = 1:Max_Iter
-        % 1. 构建模型 (注意：construct函数内部不包含dt乘法，需要在外部处理f和H)
+        % 1. 构建模型 (传入实时的 R_Gen_Max 和 R_Shed_Max)
         [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fast(...
             P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
-            Physical_AC_Up, Physical_EV_Up, ... 
+            Physical_AC_Up, Physical_EV_Up, ...
+            R_Gen_Max, R_Shed_Max, ...  % <--- 这里传入的是向量
             cost_params, risk_p, net_params);
         
-        % --- [关键修改] 乘以 dt，将功率成本转化为电能量成本 ---
-        % 对 H 中的功率变量对应的对角元素 * dt
-        % 对 f 中的功率变量对应的元素 * dt
-        
-        % 功率变量索引
-        idx_pow = [info.idx_P_AC, info.idx_P_EV, info.idx_Slack];
-        
-        % 修正 H (二次项: c2 * P^2 * dt)
-        for idx = idx_pow
-             H(idx, idx) = H(idx, idx) * dt;
-        end
-        
-        % 修正 f (一次项: c1 * P * dt)
+        % 时间积分修正
+        idx_pow = [info.idx_P_AC, info.idx_P_EV, info.idx_P_Gen, info.idx_P_Shed];
+        for idx = idx_pow, H(idx, idx) = H(idx, idx) * dt; end
         f(idx_pow) = f(idx_pow) * dt;
         
-        % 2. 添加互补性惩罚 (惩罚项也建议乘以 dt 以保持量级一致)
+        % 2. 添加互补性惩罚
         if iter > 1
-            penalty_vec_AC = lambda_SDCI * P_EV_prev * dt; % * dt
-            penalty_vec_EV = lambda_SDCI * P_AC_prev * dt; % * dt
-            
+            penalty_vec_AC = lambda_SDCI * P_EV_prev * dt;
+            penalty_vec_EV = lambda_SDCI * P_AC_prev * dt;
             P_EV_centered = P_EV_prev - mean(P_EV_prev);
             P_AC_centered = P_AC_prev - mean(P_AC_prev);
-            penalty_rho_AC = lambda_Rho * P_EV_centered * dt; % * dt
-            penalty_rho_EV = lambda_Rho * P_AC_centered * dt; % * dt
+            penalty_rho_AC = lambda_Rho * P_EV_centered * dt;
+            penalty_rho_EV = lambda_Rho * P_AC_centered * dt;
             
             f(info.idx_P_AC) = f(info.idx_P_AC) + penalty_vec_AC + penalty_rho_AC;
             f(info.idx_P_EV) = f(info.idx_P_EV) + penalty_vec_EV + penalty_rho_EV;
@@ -222,34 +248,22 @@ for i = 1:length(beta_values)
         if exitflag > 0
             P_AC_curr = x_opt(info.idx_P_AC);
             P_EV_curr = x_opt(info.idx_P_EV);
-            P_Slack = x_opt(info.idx_Slack);
+            P_Gen_curr = x_opt(info.idx_P_Gen);
+            P_Shed_curr = x_opt(info.idx_P_Shed);
             eta_val = x_opt(info.idx_eta);
             z_val = x_opt(info.idx_z);
             
-            P_AC_prev = P_AC_curr;
-            P_EV_prev = P_EV_curr;
+            P_AC_prev = P_AC_curr; P_EV_prev = P_EV_curr;
 
-            % 计算真实成本 (含 dt)
-            cost_gen = sum((cost_params.c1_ac*P_AC_curr + cost_params.c2_ac*P_AC_curr.^2) * dt + ...
-                           (cost_params.c1_ev*P_EV_curr + cost_params.c2_ev*P_EV_curr.^2) * dt);
-            cost_slack = sum(cost_params.c_slack * abs(P_Slack) * dt);
-            total_real_cost = cost_gen + cost_slack;
+            strategies{i}.P_AC = P_AC_curr;
+            strategies{i}.P_EV = P_EV_curr;
+            strategies{i}.P_Gen = P_Gen_curr;
+            strategies{i}.P_Shed = P_Shed_curr;
             
-            cvar_val = eta_val + (1 / (N_scenarios * (1 - risk_p.confidence))) * sum(z_val);
-            
-            % 记录指标
+            % SDCI/Rho 记录
             n_dummy = ones(T_steps, 1);
             val_SDCI = calculate_SDCI_local(n_dummy, n_dummy, P_AC_curr, P_EV_curr);
             val_Rho  = calculate_Rho_local(n_dummy, P_AC_curr, n_dummy, P_EV_curr);
-
-            b_run_cost(i) = cost_gen;      
-            b_slack_sum(i) = sum(abs(P_Slack)) * dt; % 转换为 MWh
-            b_risk_val(i) = cvar_val; % CVaR 本质是功率值(MW)的统计量，通常不乘dt，或者乘dt变为能量风险
-            
-            strategies{i}.P_AC = P_AC_curr;
-            strategies{i}.P_EV = P_EV_curr;
-            strategies{i}.P_Slack = P_Slack; 
-            
             if iter == 1
                 strategies{i}.SDCI_History = zeros(Max_Iter, 1);
                 strategies{i}.Rho_History = zeros(Max_Iter, 1);
@@ -257,45 +271,44 @@ for i = 1:length(beta_values)
             strategies{i}.SDCI_History(iter) = val_SDCI;
             strategies{i}.Rho_History(iter) = val_Rho;
 
+            cost_real = sum((cost_params.c1_ac*P_AC_curr + cost_params.c1_ev*P_EV_curr + ...
+                             cost_params.c1_gen*P_Gen_curr + cost_params.c1_shed*P_Shed_curr)*dt);
+            cvar_val = eta_val + (1 / (N_scenarios * (1 - risk_p.confidence))) * sum(z_val);
+            b_run_cost(i) = cost_real;
+            b_risk_val(i) = cvar_val;
+            b_slack_sum(i) = sum(P_Shed_curr) * dt;
+            
             if iter == Max_Iter
-                fprintf('发电成本: %.2f (元), 切负荷量: %.2f (MWh), 总成本: %.2f (元), CVaR风险: %.2f (MW), rho: %.4f, sdci: %.4f\n', ...
-                    cost_gen, b_slack_sum(i), total_real_cost, cvar_val, val_Rho, val_SDCI);
+                fprintf('    VPP: %.2f MWh, 火电: %.2f MWh, 切负荷: %.2f MWh, 总成本: %.2f 元, CVaR: %.2f\n', ...
+                    sum(P_AC_curr+P_EV_curr)*dt, sum(P_Gen_curr)*dt, sum(P_Shed_curr)*dt, cost_real, cvar_val);
             end
         else
-            fprintf('    Iter %d: 求解失败 (Exitflag %d)\n', iter, exitflag);
+            fprintf('    求解失败 (Exitflag %d)\n', exitflag);
             break; 
         end
     end
 end
 
-%% 
-% --- 绘图 B: 风险偏好灵敏度分析 (含数据标注) ---
+% --- 绘图 B: 风险偏好灵敏度分析 ---
 if any(~isnan(b_run_cost))
     figure('Name', '场景B_风险灵敏度', 'Color', 'w', 'Position', [100, 100, 900, 400]);
-    
-    % --- 左轴：切负荷 (柱状图) ---
     yyaxis left; 
     b = bar(1:3, b_slack_sum, 0.5, 'FaceColor', [0.8 0.3 0.3]); 
     ylabel('总切负荷电量 (MWh)'); 
     set(gca, 'XTick', 1:3, 'XTickLabel', beta_values);
-    % 添加左轴数据标注
     for i = 1:length(b_slack_sum)
         text(i, b_slack_sum(i), sprintf('%.2f', b_slack_sum(i)), ...
             'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', ...
             'FontSize', 12, 'Color', [0.6 0.1 0.1], 'FontWeight', 'bold');
     end
-    
-    % --- 右轴：风险 (折线图) ---
     yyaxis right; 
     plot(1:3, b_risk_val, 'b-o', 'LineWidth', 2, 'MarkerSize', 8); 
     ylabel('CVaR 潜在违约风险 (MW)'); 
-    % 添加右轴数据标注
     for i = 1:length(b_risk_val)
         text(i, b_risk_val(i), sprintf('%.2f', b_risk_val(i)), ...
             'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', ...
             'FontSize', 12, 'Color', 'b', 'FontWeight', 'bold');
     end
-    
     xlabel('风险厌恶系数 \beta');
     legend('切负荷量 (安全性)', '潜在违约风险 (经济性)', 'Location', 'best');
     grid on;
@@ -303,181 +316,58 @@ if any(~isnan(b_run_cost))
 end
 
 %% ================= [绘制详细调度方案 (Beta=10)] =================
-fprintf('\n>>> 正在绘制详细调度方案 (Beta=10)... \n');
+fprintf('\n>>> 正在绘制调度方案 (Beta=10)... \n');
 idx_plot = 2; 
 
 if idx_plot <= length(strategies) && ~isempty(strategies{idx_plot})
-    P_AC_opt = strategies{idx_plot}.P_AC;
-    P_EV_opt = strategies{idx_plot}.P_EV;
-    if isfield(strategies{idx_plot}, 'P_Slack')
-        P_Slack_calc = strategies{idx_plot}.P_Slack;
-    else
-        P_Slack_calc = P_grid_demand - (P_AC_opt + P_EV_opt);
-    end
-    P_Slack_calc(P_Slack_calc < 1e-5) = 0; 
+    P_AC = strategies{idx_plot}.P_AC;
+    P_EV = strategies{idx_plot}.P_EV;
+    P_Gen = strategies{idx_plot}.P_Gen;
+    P_Shed = strategies{idx_plot}.P_Shed;
     
     direction_sign = sign(direction_signal);
     direction_sign(direction_sign == 0) = 1; 
     
-    Y_Stack_Plot = [P_AC_opt, P_EV_opt, P_Slack_calc] .* direction_sign;
-    Reliable_AC_plot = Reliable_AC_Up .* direction_sign;
-    Reliable_EV_plot = Reliable_EV_Up .* direction_sign;
+    Y_Stack_Plot = [P_AC, P_EV, P_Gen, P_Shed] .* direction_sign;
     P_Demand_plot = P_grid_demand .* direction_sign;
     
-    % --- 图 1: 功率堆叠 ---
-    fig_stack = figure('Name', '协同调度功率堆叠', 'Color', 'w', 'Position', [150, 150, 1000, 600]);
+    fig_stack = figure('Name', '多源协同调度堆叠图', 'Color', 'w', 'Position', [150, 150, 1000, 600]);
     hold on;
     h_area = area(t_axis, Y_Stack_Plot);
-    h_area(1).FaceColor = [0.00, 0.45, 0.74]; h_area(1).EdgeColor = 'none';
-    h_area(2).FaceColor = [0.47, 0.67, 0.19]; h_area(2).EdgeColor = 'none';
-    h_area(3).FaceColor = [0.85, 0.33, 0.10]; h_area(3).EdgeColor = 'none'; h_area(3).FaceAlpha = 0.8;
+    h_area(1).FaceColor = [0.00, 0.45, 0.74]; h_area(1).EdgeColor = 'none'; % AC
+    h_area(2).FaceColor = [0.47, 0.67, 0.19]; h_area(2).EdgeColor = 'none'; % EV
+    h_area(3).FaceColor = [0.92, 0.69, 0.13]; h_area(3).EdgeColor = 'none'; % Gen
+    h_area(4).FaceColor = [0.85, 0.33, 0.10]; h_area(4).EdgeColor = 'none'; h_area(4).FaceAlpha = 0.8; % Shed
     plot(t_axis, P_Demand_plot, 'k--', 'LineWidth', 2.0, 'DisplayName', '电网总需求');
     ylabel('功率 (MW) [正=上调, 负=下调]', 'FontSize', 14, 'FontName', 'Microsoft YaHei');
-    legend([h_area(1), h_area(2), h_area(3)], {'空调 (AC)', '电动汽车 (EV)', '缺额 (Slack)'}, ...
+    legend([h_area(1), h_area(2), h_area(3), h_area(4)], ...
+           {'空调 (AC)', '电动汽车 (EV)', '火电调节 (Gen)', '切负荷 (Shed)'}, ...
            'Location', 'northwest', 'FontSize', 12, 'FontName', 'Microsoft YaHei');
     grid on; xlim([6, 30]); 
     set(gca, 'XTick', x_ticks_set, 'XTickLabel', x_labels_set, 'FontSize', 12, 'FontName', 'Microsoft YaHei');
-    print(fig_stack, '协同调度功率堆叠_Optimized.png', '-dpng', '-r600');
+    print(fig_stack, '多源协同调度堆叠图.png', '-dpng', '-r600');
     
-    % --- 图 2: 互补性展示 ---
-    fig_comp = figure('Name', '调度指令 vs 可靠边界', 'Color', 'w', 'Position', [200, 200, 1000, 600]);
-    hold on;
-    P_AC_line = P_AC_opt .* direction_sign;
-    P_EV_line = P_EV_opt .* direction_sign;
-    plot(t_axis, Reliable_AC_plot, 'b:', 'LineWidth', 1.5, 'DisplayName', 'AC 可靠边界');
-    plot(t_axis, P_AC_line, 'b-', 'LineWidth', 2.0, 'DisplayName', 'AC 调度');
-    plot(t_axis, Reliable_EV_plot, 'g:', 'LineWidth', 1.5, 'DisplayName', 'EV 可靠边界');
-    plot(t_axis, P_EV_line, 'g-', 'LineWidth', 2.0, 'DisplayName', 'EV 调度');
-    yline(0, 'k-', 'HandleVisibility', 'off');
-    ylabel('调节功率 (MW)', 'FontSize', 14, 'FontName', 'Microsoft YaHei'); 
-    xlabel('时间', 'FontSize', 14, 'FontName', 'Microsoft YaHei');
-    legend('Location', 'best', 'FontSize', 12, 'FontName', 'Microsoft YaHei'); 
-    grid on; xlim([6, 30]); 
-    set(gca, 'XTick', x_ticks_set, 'XTickLabel', x_labels_set, 'FontSize', 12, 'FontName', 'Microsoft YaHei');
-    print(fig_comp, 'AC与EV时序调度量对比_Optimized.png', '-dpng', '-r600');
-    
-    if isfield(strategies{idx_plot}, 'SDCI_History') && isfield(strategies{idx_plot}, 'Rho_History')
-        % --- SDCI 对比图 ---
+    % --- 指标迭代对比图 ---
+    if isfield(strategies{idx_plot}, 'SDCI_History')
         fig_sdci = figure('Name', 'SDCI 迭代对比', 'Color', 'w', 'Position', [300, 300, 600, 400]);
         sdci_vals = [strategies{idx_plot}.SDCI_History(1), strategies{idx_plot}.SDCI_History(end)];
         bar(sdci_vals, 0.4, 'FaceColor', [0.2 0.6 0.8]);
         set(gca, 'XTickLabel', {'初始迭代', '最终迭代'}, 'FontSize', 12, 'FontName', 'Microsoft YaHei');
-        ylabel('SDCI 指标 (互补性)', 'FontSize', 12, 'FontName', 'Microsoft YaHei');
-        grid on;
+        ylabel('SDCI 指标', 'FontSize', 12, 'FontName', 'Microsoft YaHei');
         text(1:2, sdci_vals, num2str(sdci_vals', '%.4f'), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 12);
         print(fig_sdci, 'SDCI对比.png', '-dpng', '-r600');
-
-        % --- Rho 对比图 ---
+        
         fig_rho = figure('Name', 'Rho 迭代对比', 'Color', 'w', 'Position', [400, 400, 600, 400]);
         rho_vals = [strategies{idx_plot}.Rho_History(1), strategies{idx_plot}.Rho_History(end)];
         bar(rho_vals, 0.4, 'FaceColor', [0.8 0.4 0.2]);
         set(gca, 'XTickLabel', {'初始迭代', '最终迭代'}, 'FontSize', 12, 'FontName', 'Microsoft YaHei');
-        ylabel('Spearman Rho 指标 (相关性)', 'FontSize', 12, 'FontName', 'Microsoft YaHei');
-        grid on;
+        ylabel('Rho 指标', 'FontSize', 12, 'FontName', 'Microsoft YaHei');
         text(1:2, rho_vals, num2str(rho_vals', '%.4f'), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 12);
         print(fig_rho, 'Rho对比.png', '-dpng', '-r600');
-        
-        fprintf('  >>> 迭代对比图已保存: SDCI对比.png, Rho对比.png\n');
     end
 end
 
-% %% ================= 场景 C: 网络阻塞管理 (高鲁棒性版) =================
-% fprintf('\n>>> 场景 C: 网络阻塞管理测试 <<<\n');
-% net_params_C = net_params;
-% 
-% % 1. 确定最严重的阻塞时刻
-% [peak_base_flow_abs, t_peak_idx] = max(abs(net_params.BaseFlow(1, :)));
-% Base_Flow_t = net_params.BaseFlow(1, t_peak_idx);
-% 
-% % 2. 获取关键参数
-% Sens_AC = net_params.PTDF(1, :) * net_params.AcDist; 
-% Sens_EV = net_params.PTDF(1, :) * net_params.EvDist; 
-% Cap_AC_t = Physical_AC_Up(t_peak_idx);
-% Cap_EV_t = Physical_EV_Up(t_peak_idx);
-% P_req_t = P_grid_demand(t_peak_idx);
-% 
-% % 3. 计算流量物理可行区间
-% % 核心约束: P_AC + P_EV = P_req (忽略 Slack)
-% Pac_min_feasible = max(0, P_req_t - Cap_EV_t);
-% Pac_max_feasible = min(Cap_AC_t, P_req_t);
-% 
-% fprintf('  [系统分析] 时刻 t=%d 状态:\n', t_peak_idx);
-% fprintf('    - 基础流量(Base): %.2f MW\n', Base_Flow_t);
-% fprintf('    - 电网需求(Req):  %.2f MW (总容量: %.2f MW)\n', P_req_t, Cap_AC_t + Cap_EV_t);
-% 
-% if Pac_min_feasible > Pac_max_feasible + 1e-5
-%     warning('    - [警告] 需求超过物理容量，跳过阻塞测试。');
-%     net_params_C.LineLimit(1) = abs(Base_Flow_t) + 10;
-% else
-%     % 计算流量的极值
-%     Flow_at_min_Pac = Base_Flow_t + Sens_AC * Pac_min_feasible + Sens_EV * (P_req_t - Pac_min_feasible);
-%     Flow_at_max_Pac = Base_Flow_t + Sens_AC * Pac_max_feasible + Sens_EV * (P_req_t - Pac_max_feasible);
-% 
-%     Abs_Flow_Possible = [abs(Flow_at_min_Pac), abs(Flow_at_max_Pac)];
-%     Min_Abs_Flow = min(Abs_Flow_Possible);
-%     Max_Abs_Flow = max(Abs_Flow_Possible);
-% 
-%     Feasible_Relief_Range = Max_Abs_Flow - Min_Abs_Flow;
-% 
-%     fprintf('    - 流量物理可行范围: [%.4f, %.4f] MW (宽度: %.4f MW)\n', ...
-%             Min_Abs_Flow, Max_Abs_Flow, Feasible_Relief_Range);
-% 
-%     % 4. 智能设置限额 (大幅放宽条件以保证数值稳定性)
-%     % [修改] 将阈值从 0.05 提高到 0.2。如果调节空间小于 0.2 MW，视为不可调。
-%     if Feasible_Relief_Range < 0.2
-%         warning('    - VPP 调节空间过小 (<0.2 MW)，跳过强制阻塞设置，仅设置宽松限额。');
-%         % 设置为最大值 + 0.1 MW，确保一定可行且不触发约束
-%         limit_val = Max_Abs_Flow + 0.1; 
-%     else
-%         % [修改] 将目标设为区间的 90% 处 (Min + 0.9 * Range)
-%         % 之前是 25%，过于逼近 Min_Abs_Flow，容易与 CVaR 约束冲突。
-%         % 设为 90% 意味着只要 VPP 稍微动一下就能满足，足以证明阻塞管理功能。
-%         limit_val = Min_Abs_Flow + 0.90 * Feasible_Relief_Range;
-% 
-%         fprintf('  - 制造阻塞: 原始最大值 %.2f MW -> 新限额 %.2f MW (位于可行区间 90%% 处)\n', ...
-%                 Max_Abs_Flow, limit_val);
-%     end
-%     net_params_C.LineLimit(1) = limit_val; 
-% end
-% 
-% % 5. 求解
-% options_robust = optimoptions('quadprog', ...
-%     'Display', 'off', ...
-%     'Algorithm', 'interior-point-convex', ...
-%     'MaxIterations', 1000);
-% 
-% risk_p.beta = 10; 
-% [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fast(...
-%     P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, Physical_AC_Up, Physical_EV_Up, ...
-%     cost_params, risk_p, net_params_C);
-% 
-% idx_pow = [info.idx_P_AC, info.idx_P_EV, info.idx_Slack];
-% for idx = idx_pow, H(idx, idx) = H(idx, idx) * dt; end
-% f(idx_pow) = f(idx_pow) * dt;
-% 
-% [x_opt_C, ~, exitflag_C] = quadprog(H, f, A, b, Aeq, beq, lb, ub, [], options_robust);
-% 
-% if exitflag_C > 0 || exitflag_C == 0
-%     if exitflag_C == 0, warning('求解未完全收敛。'); end
-% 
-%     P_AC_C = x_opt_C(info.idx_P_AC);
-%     P_EV_C = x_opt_C(info.idx_P_EV);
-%     Sens_AC = net_params_C.PTDF * net_params_C.AcDist;
-%     Sens_EV = net_params_C.PTDF * net_params_C.EvDist;
-%     Flow_L1 = net_params_C.BaseFlow(1, :)' + Sens_AC(1)*P_AC_C + Sens_EV(1)*P_EV_C; 
-% 
-%     figure('Name', '场景C_网络阻塞', 'Color', 'w', 'Position', [100, 550, 800, 400]);
-%     plot(t_axis, Flow_L1, 'b-', 'LineWidth', 1.5); hold on;
-%     plot(t_axis, net_params_C.BaseFlow(1, :), 'k:', 'LineWidth', 1.0);
-%     yline(limit_val, 'r--', 'LineWidth', 2, 'Label', '线路限额');
-%     if -limit_val > min(Flow_L1), yline(-limit_val, 'r--', 'LineWidth', 2); end
-%     ylabel('线路1 潮流 (MW)'); xlabel('时间');
-%     grid on; xlim([6, 30]); set(gca, 'XTick', x_ticks_set, 'XTickLabel', x_labels_set);
-%     print(gcf, '网络阻塞管理测试.png', '-dpng', '-r300');
-%     fprintf('  - 场景C 执行成功。\n');
-% else
-%     fprintf('  - 求解失败 (Exitflag %d)。\n', exitflag_C);
-% end
+
 %% ================= 场景 D: 鲁棒性测试 =================
 fprintf('\n>>> 场景 D: 极端场景鲁棒性测试 <<<\n');
 if ~isempty(strategies{1}) && ~isempty(strategies{3})
@@ -488,8 +378,7 @@ if ~isempty(strategies{1}) && ~isempty(strategies{3})
     Real_Cap_AC = Scenarios_AC_Up(:, worst_idx);
     Real_Cap_EV = Scenarios_EV_Up(:, worst_idx);
 
-    % [修改] 违约量也改为电量 (MWh) 可能更直观，或者保持 MW 峰值?
-    % 这里保持为累积违约功率 (MW) 以便与之前一致，但数值会小很多
+    % 计算违约量：调度指令超过该场景物理极限的部分
     calc_viol = @(P_ac, P_ev) sum(max(0, P_ac - Real_Cap_AC) + max(0, P_ev - Real_Cap_EV));
     
     viol_neutral = calc_viol(strategies{1}.P_AC, strategies{1}.P_EV);
