@@ -497,5 +497,122 @@ if ~isempty(strategies{1}) && ~isempty(strategies{3})
     grid on;
     print(gcf, '极端场景鲁棒性测试.png', '-dpng', '-r300');
 end
+%% ================= 场景 E: 置信水平(可靠性)对经济性的影响 (新增) =================
+fprintf('\n>>> 场景 E: 置信水平对经济性的影响测试 (Reliability vs Cost) <<<\n');
 
+% 1. 测试参数设置
+confidence_levels = [0.85, 0.90, 0.95, 0.99]; % 设定测试的置信水平梯度
+num_conf = length(confidence_levels);
+
+% 结果存储容器
+e_total_cost = zeros(1, num_conf);    % 系统总运行成本 (元)
+e_slack_sum = zeros(1, num_conf);     % 刚性备用调用量 (MWh, 含火电+切负荷)
+e_ac_ev_ratio = zeros(1, num_conf);   % AC/EV 承担的电量比例 (用于观察资源利用率变化)
+
+% 固定其他参数 (控制变量法)
+risk_p_E = risk_p; 
+risk_p_E.beta = 1;      % 固定为“适度风险规避”模式
+risk_p_E.rho_pen = 500; % 保持违约惩罚单价一致
+
+fprintf('  控制参数: 风险厌恶系数 beta = %.1f\n', risk_p_E.beta);
+
+% 2. 循环测试不同置信度
+for k = 1:num_conf
+    curr_alpha = confidence_levels(k);
+    risk_p_E.confidence = curr_alpha; % 核心修改：调整 CVaR 的尾部截断置信度
+    
+    fprintf('  [测试 %d/%d] 置信水平 alpha = %.2f ... ', k, num_conf, curr_alpha);
+    
+    % --- 优化求解 (复用场景B的迭代逻辑) ---
+    P_AC_prev = zeros(T_steps, 1);
+    P_EV_prev = zeros(T_steps, 1);
+    
+    for iter = 1:Max_Iter
+        % 构建模型 (传入当前的 risk_p_E)
+        [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fast(...
+            P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
+            Physical_AC_Up, Physical_EV_Up, ...
+            R_Gen_Max, R_Shed_Max, ...
+            cost_params, risk_p_E, net_params);
+            
+        % 时间积分修正 (Power -> Energy)
+        idx_pow = [info.idx_P_AC, info.idx_P_EV, info.idx_P_Gen, info.idx_P_Shed];
+        for idx = idx_pow, H(idx, idx) = H(idx, idx) * dt; end
+        f(idx_pow) = f(idx_pow) * dt;
+        
+        % 添加互补性惩罚 (保持模型一致性)
+        if iter > 1
+             penalty_vec_AC = lambda_SDCI * P_EV_prev * dt;
+             penalty_vec_EV = lambda_SDCI * P_AC_prev * dt;
+             P_EV_centered = P_EV_prev - mean(P_EV_prev);
+             P_AC_centered = P_AC_prev - mean(P_AC_prev);
+             penalty_rho_AC = lambda_Rho * P_EV_centered * dt;
+             penalty_rho_EV = lambda_Rho * P_AC_centered * dt;
+             
+             f(info.idx_P_AC) = f(info.idx_P_AC) + penalty_vec_AC + penalty_rho_AC;
+             f(info.idx_P_EV) = f(info.idx_P_EV) + penalty_vec_EV + penalty_rho_EV;
+        end
+        
+        % 调用求解器
+        [x_opt, ~, exitflag] = quadprog(H, f, A, b, Aeq, beq, lb, ub, [], options);
+        
+        if exitflag > 0
+            % 提取结果
+            P_AC_curr = x_opt(info.idx_P_AC);
+            P_EV_curr = x_opt(info.idx_P_EV);
+            P_Gen_curr = x_opt(info.idx_P_Gen);
+            P_Shed_curr = x_opt(info.idx_P_Shed);
+            P_AC_prev = P_AC_curr; P_EV_prev = P_EV_curr;
+        else
+             fprintf(' -> 求解失败 (Exitflag %d)\n', exitflag); break;
+        end
+    end
+    
+    % 3. 记录数据
+    if exitflag > 0
+        % 计算实际发生的物理运行成本 (不含虚拟的风险惩罚值，只看真金白银)
+        % Cost = AC成本 + EV成本 + 火电成本 + 切负荷惩罚
+        real_cost = sum((cost_params.c1_ac*P_AC_curr + cost_params.c2_ac*P_AC_curr.^2)*dt + ...
+                        (cost_params.c1_ev*P_EV_curr + cost_params.c2_ev*P_EV_curr.^2)*dt + ...
+                        (cost_params.c1_gen*P_Gen_curr + cost_params.c2_gen*P_Gen_curr.^2)*dt + ...
+                        (cost_params.c1_shed*P_Shed_curr)*dt); % 切负荷通常主要是一次项惩罚
+        
+        e_total_cost(k) = real_cost;
+        e_slack_sum(k) = sum(P_Gen_curr + P_Shed_curr) * dt; % 记录被迫调用的昂贵资源量(MWh)
+        
+        fprintf('成功。总成本: %.2f 元, 昂贵资源调用: %.2f MWh\n', real_cost, e_slack_sum(k));
+    end
+end
+
+% 4. 绘图与保存 (帕累托前沿风格)
+if any(e_total_cost > 0)
+    fig_conf = figure('Name', '场景E_置信度影响', 'Color', 'w', 'Position', [600, 100, 700, 450]);
+    
+    % 双轴图
+    yyaxis left;
+    b = bar(categorical(confidence_levels), e_total_cost, 0.5, 'FaceColor', [0.2 0.6 0.8]);
+    ylabel('系统总运行成本 (元)', 'FontSize', 12, 'FontName', 'Microsoft YaHei');
+    ylim([min(e_total_cost)*0.9, max(e_total_cost)*1.1]); % 动态调整轴范围以便观察差异
+    
+    % 为柱状图添加数值标签
+    for i = 1:length(e_total_cost)
+        text(i, e_total_cost(i), sprintf('%.0f', e_total_cost(i)), ...
+             'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', ...
+             'FontSize', 10, 'Color', 'b');
+    end
+
+    yyaxis right;
+    plot(1:num_conf, e_slack_sum, 'r-^', 'LineWidth', 2, 'MarkerSize', 8, 'MarkerFaceColor', 'r');
+    ylabel('火电与切负荷调用量 (MWh)', 'FontSize', 12, 'FontName', 'Microsoft YaHei');
+    ax = gca; ax.YColor = 'r';
+    
+    xlabel('置信水平 \alpha (可靠性要求)', 'FontSize', 12, 'FontName', 'Microsoft YaHei');
+    title('置信水平对调度经济性的影响分析', 'FontSize', 14, 'FontName', 'Microsoft YaHei');
+    legend({'运行成本 (左轴)', '备用资源调用 (右轴)'}, 'Location', 'northwest', 'FontSize', 11);
+    grid on;
+    
+    % 保存图片
+    print(fig_conf, '置信水平经济性分析.png', '-dpng', '-r300');
+    fprintf('  >>> 结果图已保存: 置信水平经济性分析.png\n');
+end
 fprintf('\n所有测试结束。\n');
