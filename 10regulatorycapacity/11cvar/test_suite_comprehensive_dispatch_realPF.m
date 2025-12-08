@@ -198,7 +198,7 @@ net_params.LineLimit = ones(N_line, 1) * (max_base_flow + 5.0);
 % 6. 计算实时的调节容量物理上限
 
 % 火电装机容量 (MW) - G1(350) + G5(900)
-Gen_Capacity_Installed = 1005; 
+Gen_Capacity_Installed = 1000; 
 
 % 火电调节能力(上调) = 装机容量 - 当前基线出力
 % 当前基线出力 = Total_System_Load_t (因为 Gen = Load)
@@ -355,17 +355,24 @@ fprintf('\n>>> 正在绘制调度方案 (Beta=10)... \n');
 idx_plot = 2; 
 
 if idx_plot <= length(strategies) && ~isempty(strategies{idx_plot})
-    P_AC = strategies{idx_plot}.P_AC;
-    P_EV = strategies{idx_plot}.P_EV;
+    P_AC_opt = strategies{idx_plot}.P_AC;
+    P_EV_opt = strategies{idx_plot}.P_EV;
     P_Gen = strategies{idx_plot}.P_Gen;
     P_Shed = strategies{idx_plot}.P_Shed;
+    if isfield(strategies{idx_plot}, 'P_Slack')
+        P_Slack_calc = strategies{idx_plot}.P_Slack;
+    else
+        P_Slack_calc = P_grid_demand - (P_AC_opt + P_EV_opt);
+    end
+    P_Slack_calc(P_Slack_calc < 1e-5) = 0; 
     
     direction_sign = sign(direction_signal);
     direction_sign(direction_sign == 0) = 1; 
     
-    Y_Stack_Plot = [P_AC, P_EV, P_Gen, P_Shed] .* direction_sign;
+    Y_Stack_Plot = [P_AC_opt, P_EV_opt, P_Gen, P_Shed] .* direction_sign;
     P_Demand_plot = P_grid_demand .* direction_sign;
     
+    % --- 图 1: 功率堆叠 (独立窗口) ---
     fig_stack = figure('Name', '多源协同调度堆叠图', 'Color', 'w', 'Position', [150, 150, 1000, 600]);
     hold on;
     h_area = area(t_axis, Y_Stack_Plot);
@@ -381,6 +388,49 @@ if idx_plot <= length(strategies) && ~isempty(strategies{idx_plot})
     grid on; xlim([6, 30]); 
     set(gca, 'XTick', x_ticks_set, 'XTickLabel', x_labels_set, 'FontSize', 12, 'FontName', 'Microsoft YaHei');
     print(fig_stack, '多源协同调度堆叠图.png', '-dpng', '-r600');
+    
+    % ================= [本次修改] 新增 图 2: AC与EV时序出力对比 =================
+    fprintf('  >>> 正在绘制 AC与EV时序调度量对比图...\n');
+    fig_comp = figure('Name', 'AC与EV时序出力对比', 'Color', 'w', 'Position', [200, 200, 1000, 600]);
+    hold on;
+    
+    % 构造可靠边界曲线 (根据方向选择 Up 或 Down 边界)
+    Reliable_AC_plot = zeros(T_steps, 1);
+    Reliable_EV_plot = zeros(T_steps, 1);
+    for t = 1:T_steps
+        if direction_sign(t) >= 0
+            Reliable_AC_plot(t) = Reliable_AC_Up(t);
+            Reliable_EV_plot(t) = Reliable_EV_Up(t);
+        else
+            Reliable_AC_plot(t) = -Reliable_AC_Down(t); % 负值表示下调容量边界
+            Reliable_EV_plot(t) = -Reliable_EV_Down(t);
+        end
+    end
+
+    % 构造调度出力曲线 (带符号)
+    P_AC_line = P_AC_opt .* direction_sign;
+    P_EV_line = P_EV_opt .* direction_sign;
+
+    plot(t_axis, Reliable_AC_plot, 'b:', 'LineWidth', 1.5, 'DisplayName', 'AC 可靠边界');
+    plot(t_axis, P_AC_line, 'b-', 'LineWidth', 2.0, 'DisplayName', 'AC 调度');
+    
+    plot(t_axis, Reliable_EV_plot, 'g:', 'LineWidth', 1.5, 'DisplayName', 'EV 可靠边界');
+    plot(t_axis, P_EV_line, 'g-', 'LineWidth', 2.0, 'DisplayName', 'EV 调度');
+    
+    yline(0, 'k-', 'HandleVisibility', 'off');
+    ylabel('调节功率 (MW)', 'FontSize', 14, 'FontName', 'Microsoft YaHei'); 
+    xlabel('时间', 'FontSize', 14, 'FontName', 'Microsoft YaHei');
+    
+    legend('Location', 'best', 'FontSize', 12, 'FontName', 'Microsoft YaHei'); 
+    grid on; 
+    xlim([6, 30]); 
+    set(gca, 'XTick', x_ticks_set, 'XTickLabel', x_labels_set, ...
+        'FontSize', 12, 'FontName', 'Microsoft YaHei', 'LineWidth', 1.2);
+    
+    % 保存图 2
+    print(fig_comp, 'AC与EV时序调度量对比_Optimized.png', '-dpng', '-r600');
+    fprintf('  >>> 图2已保存: AC与EV时序调度量对比_Optimized.png\n');
+    % =========================================================================
     
     % --- 指标迭代对比图 ---
     if isfield(strategies{idx_plot}, 'SDCI_History')
@@ -401,10 +451,9 @@ if idx_plot <= length(strategies) && ~isempty(strategies{idx_plot})
         print(fig_rho, 'Rho对比.png', '-dpng', '-r600');
     end
 end
-
-
 %% ================= 场景 D: 鲁棒性测试 =================
 fprintf('\n>>> 场景 D: 极端场景鲁棒性测试 <<<\n');
+
 if ~isempty(strategies{1}) && ~isempty(strategies{3})
     Total_Cap_Scen = Scenarios_AC_Up + Scenarios_EV_Up;
     [~, worst_idx] = min(sum(Total_Cap_Scen));
@@ -413,20 +462,19 @@ if ~isempty(strategies{1}) && ~isempty(strategies{3})
     Real_Cap_AC = Scenarios_AC_Up(:, worst_idx);
     Real_Cap_EV = Scenarios_EV_Up(:, worst_idx);
 
-    % 计算违约量：调度指令超过该场景物理极限的部分
     calc_viol = @(P_ac, P_ev) sum(max(0, P_ac - Real_Cap_AC) + max(0, P_ev - Real_Cap_EV));
     
     viol_neutral = calc_viol(strategies{1}.P_AC, strategies{1}.P_EV);
     viol_robust  = calc_viol(strategies{3}.P_AC, strategies{3}.P_EV);
     
-    fprintf('  - 中性策略(Beta=0) 累积违约量: %.2f MW\n', viol_neutral);
-    fprintf('  - 规避策略(Beta=100) 累积违约量: %.2f MW\n', viol_robust);
+    fprintf('  - 中性策略(Beta=0) 违约量: %.2f MW\n', viol_neutral);
+    fprintf('  - 规避策略(Beta=100) 违约量: %.2f MW\n', viol_robust);
     
     figure('Name', '场景D_鲁棒性', 'Color', 'w', 'Position', [600, 300, 500, 400]);
     b = bar([viol_neutral, viol_robust], 0.5);
     b.FaceColor = 'flat'; b.CData(1,:) = [0.8 0.2 0.2]; b.CData(2,:) = [0.2 0.6 0.2];
     set(gca, 'XTickLabel', {'中性 (\beta=0)', '规避 (\beta=100)'});
-    ylabel('极端场景累积违约量 (MW)');
+    ylabel('极端场景实际违约量 (MW)');
     grid on;
     print(gcf, '极端场景鲁棒性测试.png', '-dpng', '-r300');
 end
