@@ -1,12 +1,3 @@
-% 修改说明：
-% 1. 功率平衡：P_AC + P_EV + P_Gen + P_Shed = P_req
-% 2. 物理约束升级：
-%    - 严格考虑 AC/EV 基线功率的节点映射
-%    - 重新计算包含 AC/EV 基线的线路背景潮流
-%    - 火电调节上限 = 火电装机容量 - (刚性负荷 + AC基线 + EV基线)
-%    - 切负荷上限 = 刚性负荷 + AC基线 + EV基线
-% 3. 调度优先级：VPP (最廉价) -> 火电 -> 切负荷 (最昂贵)
-
 clear; close all; clc;
 
 %% ================= 1. 全局初始化 =================
@@ -66,7 +57,7 @@ lambda_SDCI = 10;
 lambda_Rho  = 10;   
 Max_Iter    = 3;    
 
-% --- 构造混合需求 ---
+% --- 构造混合需求 (修改为每30分钟生成一次) ---
 rng(105); 
 P_grid_demand = zeros(T_steps, 1);
 Effective_Scen_AC = zeros(T_steps, N_scenarios);
@@ -76,10 +67,30 @@ Effective_Phys_EV = zeros(T_steps, 1);
 Effective_Reliable_AC = zeros(T_steps, 1); 
 Effective_Reliable_EV = zeros(T_steps, 1); 
 
-direction_signal = randn(T_steps, 1); 
+% [修改开始]：设置每30分钟变化一次
+steps_per_30min = round(30 / (dt * 60)); % 30分钟对应的仿真步数 (例如 6步)
+num_blocks = ceil(T_steps / steps_per_30min); % 总块数
+
+% 预先生成每个30分钟块的随机信号
+block_direction_signal = randn(num_blocks, 1); % 每个块的方向
+block_rand_factors = rand(num_blocks, 1);      % 每个块的需求强度随机因子
+
+direction_signal = zeros(T_steps, 1); % 用于存储展开后的方向信号 (供后续绘图)
+current_block_demand = 0;             % 当前块的需求值缓存
+
+fprintf('生成混合需求: 指令每 30 分钟更新一次 (保持恒定)。\n');
 
 for t = 1:T_steps
-    is_up_regulation = direction_signal(t) >= 0;
+    % 1. 确定当前所在的块索引
+    block_idx = ceil(t / steps_per_30min);
+    
+    % 2. 记录方向信号 (用于后续)
+    direction_signal(t) = block_direction_signal(block_idx);
+    
+    % 3. 判断方向 (基于块信号)
+    is_up_regulation = block_direction_signal(block_idx) >= 0;
+    
+    % 4. 根据方向映射有效数据 (数据本身是随时间变化的)
     if is_up_regulation
         Effective_Scen_AC(t,:) = Scenarios_AC_Up(t,:);
         Effective_Scen_EV(t,:) = Scenarios_EV_Up(t,:);
@@ -96,11 +107,21 @@ for t = 1:T_steps
         Effective_Reliable_EV(t) = Reliable_EV_Down(t);
     end
     
-    cap_rel = Effective_Reliable_AC(t) + Effective_Reliable_EV(t);
-    cap_phy = Effective_Phys_AC(t) + Effective_Phys_EV(t);
-    req_magnitude = cap_rel + 0.60 * (cap_phy - cap_rel) * rand(); 
-    P_grid_demand(t) = req_magnitude;
+    % 5. 计算需求 P_grid_demand
+    % 逻辑：如果是块的开始 (t=1, 7, 13...)，计算一个新的需求值并锁定
+    if mod(t-1, steps_per_30min) == 0
+        cap_rel = Effective_Reliable_AC(t) + Effective_Reliable_EV(t);
+        cap_phy = Effective_Phys_AC(t) + Effective_Phys_EV(t);
+        
+        % 需求 = 可靠容量 + 60% * (风险区间 * 随机因子)
+        % 注意：基于该30分钟时段开始时刻的容量来设定整个时段的需求
+        current_block_demand = cap_rel + 0.60 * (cap_phy - cap_rel) * block_rand_factors(block_idx);
+    end
+    
+    % 在块内保持需求恒定
+    P_grid_demand(t) = current_block_demand;
 end
+% [修改结束]
 
 Scenarios_AC_Up = Effective_Scen_AC;
 Scenarios_EV_Up = Effective_Scen_EV;
@@ -276,7 +297,11 @@ for i = 1:length(beta_values)
             cvar_val = eta_val + (1 / (N_scenarios * (1 - risk_p.confidence))) * sum(z_val);
             b_run_cost(i) = cost_real;
             b_risk_val(i) = cvar_val;
-            b_slack_sum(i) = sum(P_Shed_curr) * dt;
+            
+            % ==================== [修改点] ====================
+            % 将原来的仅切负荷 改为 切负荷 + 火电调度
+            b_slack_sum(i) = sum(P_Shed_curr + P_Gen_curr) * dt; 
+            % ==================================================
             
             if iter == Max_Iter
                 fprintf('    VPP: %.2f MWh, 火电: %.2f MWh, 切负荷: %.2f MWh, 总成本: %.2f 元, CVaR: %.2f\n', ...
@@ -294,7 +319,12 @@ if any(~isnan(b_run_cost))
     figure('Name', '场景B_风险灵敏度', 'Color', 'w', 'Position', [100, 100, 900, 400]);
     yyaxis left; 
     b = bar(1:3, b_slack_sum, 0.5, 'FaceColor', [0.8 0.3 0.3]); 
-    ylabel('总切负荷电量 (MWh)'); 
+    
+    % ==================== [修改点] ====================
+    % 修改 Y 轴标签
+    ylabel('切负荷量 + 火电调度量 (MWh)'); 
+    % ==================================================
+    
     set(gca, 'XTick', 1:3, 'XTickLabel', beta_values);
     for i = 1:length(b_slack_sum)
         text(i, b_slack_sum(i), sprintf('%.2f', b_slack_sum(i)), ...
@@ -310,7 +340,12 @@ if any(~isnan(b_run_cost))
             'FontSize', 12, 'Color', 'b', 'FontWeight', 'bold');
     end
     xlabel('风险厌恶系数 \beta');
-    legend('切负荷量 (安全性)', '潜在违约风险 (经济性)', 'Location', 'best');
+    
+    % ==================== [修改点] ====================
+    % 修改图例名称
+    legend('切负荷 + 火电 (安全性)', '潜在违约风险 (经济性)', 'Location', 'best');
+    % ==================================================
+    
     grid on;
     print(gcf, '风险偏好灵敏度分析.png', '-dpng', '-r300');
 end
