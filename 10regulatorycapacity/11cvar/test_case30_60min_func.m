@@ -134,8 +134,7 @@ Physical_EV_Up  = Effective_Phys_EV;
 %% ================= 3. 构建 IEEE 30 节点网络模型 =================
 fprintf('\n>>> 构建 IEEE 30 节点网络模型 <<<\n');
 
-% mpc = case30();
-mpc = case_ieee30;
+mpc = case30();
 N_bus = size(mpc.bus, 1);
 N_line = size(mpc.branch, 1);
 
@@ -156,15 +155,8 @@ net_params.PTDF(:, non_ref) = PTDF_reduced;
 
 Bus_Pd = mpc.bus(:, 3);
 if sum(Bus_Pd) == 0, Bus_Pd = ones(N_bus, 1); end 
-Bus_KV = mpc.bus(:, 10);
-Voltage_Weight = ones(N_bus, 1);
-Voltage_Weight(Bus_KV < 100) = 0.2; 
-Raw_Dist = Bus_Pd .* Voltage_Weight;
-if sum(Raw_Dist) == 0
-    Raw_Dist = ones(N_bus, 1); % 防止全0的保护
-end
-net_params.AcDist = Raw_Dist / sum(Raw_Dist);
-net_params.EvDist = Raw_Dist / sum(Raw_Dist);
+net_params.AcDist = Bus_Pd / sum(Bus_Pd);
+net_params.EvDist = Bus_Pd / sum(Bus_Pd);
 net_params.ShedDist = zeros(N_bus, 1); 
 
 Gen_Pmax = mpc.gen(:, 9);
@@ -194,10 +186,8 @@ net_params.BaseFlow = net_params.PTDF * P_inj_t;
 
 Max_Base_Flow = max(abs(net_params.BaseFlow), [], 2);
 Line_RateA = mpc.branch(:, 6);
-% Line_RateA(Line_RateA < 1e-3) = 130; 
-% net_params.LineLimit = max(Line_RateA, Max_Base_Flow + 30); 
-estimated_limits = max(Max_Base_Flow * 1.5, Max_Base_Flow + 20);
-net_params.LineLimit = max(Line_RateA, estimated_limits);
+Line_RateA(Line_RateA < 1e-3) = 130; 
+net_params.LineLimit = max(Line_RateA, Max_Base_Flow + 30); 
 
 R_Gen_Max = max(0, sum(Gen_Pmax) - Total_Sys_Load);
 R_Shed_Max = 1e6 * ones(T_steps, 1); 
