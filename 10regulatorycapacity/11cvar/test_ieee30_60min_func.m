@@ -134,7 +134,8 @@ Physical_EV_Up  = Effective_Phys_EV;
 %% ================= 3. 构建 IEEE 30 节点网络模型 =================
 fprintf('\n>>> 构建 IEEE 30 节点网络模型 <<<\n');
 
-mpc = case30();
+% mpc = case30();
+mpc = case_ieee30;
 N_bus = size(mpc.bus, 1);
 N_line = size(mpc.branch, 1);
 
