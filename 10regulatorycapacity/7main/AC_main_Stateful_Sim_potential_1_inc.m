@@ -1,4 +1,3 @@
-
 clear; close all; clc;
 
 tic; % 启动一个总计时器
@@ -334,6 +333,31 @@ Agg_Total_Power = sum(Total_Power_History, 2);
 fprintf('  Step 5.7: 聚合完成。\n');
 % --- [新增 V11] 结束 ---
 
+% --- [新增 V13] 步骤 5.7b: 计算聚合模型理论制冷功率 ---
+fprintf('  Step 5.7b: 计算聚合模型理论制冷功率...\n');
+% 构造完整的 SOC 序列 (T+1 个点)
+SOC_Final = mean(CURRENT_SOC_AC, 'omitnan');
+SOC_Sequence = [Agg_SOC_History; SOC_Final]; 
+
+Agg_Model_Dev_Power = zeros(T_steps_total, 1);
+if abs(AggParams.B) > 1e-9
+    for t = 1:T_steps_total
+        s_t = SOC_Sequence(t);
+        s_next = SOC_Sequence(t+1);
+        % 反解: s_next = A*s_t + B*P + C  =>  P = (s_next - A*s_t - C) / B
+        % 注意：AggParams.B 在代码中通常已包含或不包含 dt 取决于模型定义
+        % 在 Step 5 中：SOC_target_next = A*S + B*Delta + C。Delta 是功率。
+        % 所以此处反解得到的 P 就是功率，不需要额外除以 dt（除非B定义变了，按现有逻辑 B 对应功率系数）
+        Agg_Model_Dev_Power(t) = (s_next - AggParams.A * s_t - AggParams.C) / AggParams.B;
+    end
+else
+    warning('AggParams.B is close to 0, cannot inverse model.');
+end
+
+Agg_Model_Total_Power = Agg_Baseline_Power + Agg_Model_Dev_Power;
+fprintf('  Step 5.7b: 聚合模型功率计算完成。\n');
+% --- [新增 V13] 结束 ---
+
 % --- [Step 5.8 修改版]：保存完整仿真数据到 MAT 文件 ---
 fprintf('  Step 5.8: 正在保存完整仿真数据到 MAT 文件...\n');
 
@@ -353,7 +377,8 @@ results.Agg_P_Achieved_History = Agg_P_Achieved_History; % 响应功率
 
 % 3. 功率分析数据
 results.Agg_Baseline_Power = Agg_Baseline_Power; % 聚合基线功率
-results.Agg_Total_Power = Agg_Total_Power;       % 聚合总制冷功率
+results.Agg_Total_Power = Agg_Total_Power;       % 聚合总制冷功率 (单体累加)
+results.Agg_Model_Total_Power = Agg_Model_Total_Power; % 聚合模型总制冷功率 (理论反解)
 results.Total_Power_History = Total_Power_History; % 单体总制冷功率 (用于图5)
 results.Individual_Power_History = Individual_Power_History; % 单体调节功率 (用于图4)
 

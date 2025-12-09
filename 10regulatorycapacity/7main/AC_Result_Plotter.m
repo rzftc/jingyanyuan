@@ -71,6 +71,7 @@ if has_single_result
         'Total_Power_History', 'Total_Power_History';
         'Agg_Baseline_Power', 'Agg_Baseline_Power';
         'Agg_Total_Power', 'Agg_Total_Power';
+        'Agg_Model_Total_Power', 'Agg_Model_Total_Power'; % [新增] 聚合模型功率
         'Agg_P_Potential_Up_History', 'AC_Up';
         'Agg_P_Potential_Down_History', 'AC_Down';
         'Agg_Model_Potential_Up_History', 'Agg_Model_Potential_Up_History';
@@ -218,7 +219,27 @@ if has_single_result
         xlim([0, 24]); grid on;
         print(gcf, '图7_聚合潜力对比.png', '-dpng', '-r300');
     end
-    
+    if ~isempty(Agg_Total_Power)
+        figure('Position', [100 600 1000 450]);
+        hold on;
+        
+        % 1. 单体累加的制冷功率 (红色实线)
+        plot(time_points, Agg_Total_Power, 'r-', 'LineWidth', 2, 'DisplayName', '聚合总制冷功率 (单体累加)');
+        
+        % 2. 聚合模型制冷功率 (绿色虚线)
+        if ~isempty(Agg_Model_Total_Power)
+             plot(time_points, Agg_Model_Total_Power, 'g:', 'LineWidth', 2.5, 'DisplayName', '聚合模型制冷功率');
+        end
+        
+        hold off;
+        xlabel('时间 (小时)', 'FontSize', 12);
+        ylabel('功率 (kW)', 'FontSize', 12);
+        legend('show', 'Location', 'best', 'FontSize', 11);
+        set(gca, 'FontSize', 11);
+        xlim([0, 24]); grid on;
+        print(gcf, '图8_聚合功率对比.png', '-dpng', '-r300');
+    end
+
     fprintf('单次仿真绘图完成。\n');
 end
 
