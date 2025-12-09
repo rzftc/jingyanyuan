@@ -72,7 +72,7 @@ function run_scenario_E(P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
         ylabel('火电与切负荷调用量 (MWh)', 'FontSize', 12, 'FontName', 'Microsoft YaHei');
         ax = gca; ax.YColor = 'r';
         xlabel('置信水平 \alpha (可靠性要求)', 'FontSize', 12, 'FontName', 'Microsoft YaHei');
-        legend({'运行成本 (左轴)', '备用资源调用 (右轴)'}, 'Location', 'northwest', 'FontSize', 11);
+        legend({'运行成本', '备用资源调用'}, 'Location', 'northwest', 'FontSize', 11);
         grid on;
         print(fig_conf, '置信水平经济性分析.png', '-dpng', '-r300');
     end

@@ -16,7 +16,7 @@ function P_signal_t = generate_hourly_regulation_signal(T_steps_total, steps_per
     
     % 启发式估算：假设每台AC平均可提供 0.5kW 的调节能力
     % (这是一个非常简化的假设，用于保证指令幅度合理)
-    P_potential_chunk_mag = num_ac_total * 0.5; 
+    P_potential_chunk_mag = num_ac_total * 0.3; 
     
     % 假设电网指令在总潜力的 +/- 40% 之间波动
     max_signal = P_potential_chunk_mag * 0.4;

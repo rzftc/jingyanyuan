@@ -155,11 +155,29 @@ if has_single_result
         print(gcf, '图4_单体调节功率.png', '-dpng', '-r300');
     end
     
-    % 图 5: 单体总制冷功率
+   % 图 5: 单体总制冷功率
     if ~isempty(Total_Power_History)
         figure('Position', [100 500 1000 450]);
-        plot(time_points, Total_Power_History, 'LineWidth', 0.5);
+        
+        % --- [修改开始] 筛选第5小时后功率始终小于6kW的空调 ---
+        % 1. 找到第5小时之后的时间索引
+        idx_after_5h = time_points > 5;
+        
+        % 2. 找到符合条件的空调列索引 (在idx_after_5h时间段内，最大功率 < 6)
+        % Total_Power_History 的每一列代表一台空调
+        valid_ac_mask = max(Total_Power_History(idx_after_5h, :), [], 1) < 6;
+        
+        % 3. 提取需要绘制的数据
+        Data_to_Plot = Total_Power_History(:, valid_ac_mask);
+        
+        fprintf('  图5筛选: 共 %d 台空调，其中 %d 台满足"5小时后功率<6kW"的条件。\n', ...
+            size(Total_Power_History, 2), sum(valid_ac_mask));
+            
+        plot(time_points, Data_to_Plot, 'LineWidth', 0.5);
+        % --- [修改结束] ---
+        
         yline(P_standby, 'k--', 'LineWidth', 1.5, 'DisplayName', '待机功率');
+        
         xlabel('时间 (小时)', 'FontSize', 12);
         ylabel('功率 (kW)', 'FontSize', 12);
         xlim([0, 24]); grid on;

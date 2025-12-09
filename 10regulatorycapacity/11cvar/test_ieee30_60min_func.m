@@ -212,21 +212,21 @@ options = optimoptions('quadprog', 'Display', 'off', 'Algorithm', 'interior-poin
 
 %% ================= 4. 执行各个场景 (函数调用) =================
 
-% 1. 运行场景 B: 风险偏好灵敏度分析
+%% 1. 运行场景 B: 风险偏好灵敏度分析
 % 返回计算出的策略 (strategies) 供后续场景使用
 strategies = run_scenario_B(beta_values, Max_Iter, N_scenarios, N_bus, N_line, dt, ...
     P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, Physical_AC_Up, Physical_EV_Up, ...
     R_Gen_Max, R_Shed_Max, cost_params, net_params, direction_signal, lambda_SDCI, lambda_Rho, options);
 
-% 2. 运行场景 C: 详细调度方案 (Beta=10)
+%% 2. 运行场景 C: 详细调度方案 (Beta=10)
 run_scenario_C(strategies, t_axis, P_grid_demand, direction_signal, ...
     Reliable_AC_Up, Reliable_EV_Up, Reliable_AC_Down, Reliable_EV_Down, ...
     x_ticks_set, x_labels_set);
 
-% 3. 运行场景 D: 鲁棒性测试
+%% 3. 运行场景 D: 鲁棒性测试
 run_scenario_D(strategies, Scenarios_AC_Up, Scenarios_EV_Up, Scenarios_AC_Down, Scenarios_EV_Down, direction_signal);
 
-% 4. 运行场景 E: 置信水平测试
+%% 4. 运行场景 E: 置信水平测试
 run_scenario_E(P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
     Physical_AC_Up, Physical_EV_Up, R_Gen_Max, R_Shed_Max, ...
     cost_params, net_params, direction_signal, dt, options, N_scenarios, N_line, N_bus);
