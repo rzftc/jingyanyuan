@@ -178,7 +178,7 @@ for i = 1:num_AC_participating
     ac_i = ACs_participating(i);
     % 计算该单体在全时段内的最大基线功率
     P_base_profile_i = ACbaseP_single(ac_i.T_ja, ac_i.Tset, ac_i.R, ac_i.eta);
-    P_max_i = max(abs(P_base_profile_i));
+    P_max_i = 1.1*max(abs(P_base_profile_i));
     Agg_P_Physical_Max_Total = Agg_P_Physical_Max_Total + P_max_i;
 end
 
