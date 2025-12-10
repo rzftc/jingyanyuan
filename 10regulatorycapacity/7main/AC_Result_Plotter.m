@@ -252,7 +252,7 @@ fprintf('检查批量仿真文件夹 "%s" ...\n', results_dir);
 if exist(results_dir, 'dir')
     
     % 搜索所有文件
-    file_pattern = fullfile(results_dir, 'AC_Stateful_Simulation_Results_Price_*.mat');
+    file_pattern = fullfile(results_dir, 'AC_Stateful_Simulation_Results_Price_*_limit.mat');
     mat_files = dir(file_pattern);
     
     if isempty(mat_files)

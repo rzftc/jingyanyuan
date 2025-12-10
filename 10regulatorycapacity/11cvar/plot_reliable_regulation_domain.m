@@ -4,7 +4,7 @@
 clear; close all; clc;
 
 %% 1. 加载数据
-data_file = 'reliable_regulation_domain_1000_mix_pbase.mat';
+data_file = 'reliable_regulation_domain_1000_mix_pbase_less.mat';
 
 if ~exist(data_file, 'file')
     error(['数据文件 %s 不存在。\n' ...

@@ -62,7 +62,7 @@ function [AC_Up_Sum, AC_Down_Sum, AC_Base_Sum] = run_AC_simulation_MC(random_see
         if temp_ACs(i).ptcp
             temp_ACs(i).Tmax = temp_ACs(i).Tset_original + deltaT;
             temp_ACs(i).Tmin = temp_ACs(i).Tset_original - deltaT;
-            temp_ACs(i).Tset = temp_ACs(i).Tmin + (temp_ACs(i).Tmax - temp_ACs(i).Tmin) * rand();
+            % temp_ACs(i).Tset = temp_ACs(i).Tmin + (temp_ACs(i).Tmax - temp_ACs(i).Tmin) * rand();
         end
         temp_ACs(i).T_ja = base_ambient_temp_unified;
 
