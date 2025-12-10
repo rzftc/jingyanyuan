@@ -224,7 +224,7 @@ run_scenario_C(strategies, t_axis, P_grid_demand, direction_signal, ...
     x_ticks_set, x_labels_set);
 
 %% 3. 运行场景 D: 鲁棒性测试
-run_scenario_D(strategies, Scenarios_AC_Up, Scenarios_EV_Up, Scenarios_AC_Down, Scenarios_EV_Down, direction_signal);
+run_scenario_D_ramp(strategies, Scenarios_AC_Up, Scenarios_EV_Up, Scenarios_AC_Down, Scenarios_EV_Down, direction_signal);
 
 %% 4. 运行场景 E: 置信水平测试
 run_scenario_E(P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...

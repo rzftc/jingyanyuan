@@ -10,8 +10,9 @@ function run_scenario_E(P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
     T_steps = length(P_grid_demand);
 
     risk_E.beta = 1;
-    risk_E.rho_pen = 300;
-
+    % risk_E.rho_pen = 10000;
+    risk_E.rho_pen = 500; 
+    risk_E.tight_factor = 0.9;
     for k = 1:num_conf
         curr_alpha = confs(k);
         risk_E.confidence = curr_alpha;
@@ -20,7 +21,7 @@ function run_scenario_E(P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
         net_params_safe = net_params;
         net_params_safe.ShedDist = zeros(N_bus, 1);
 
-        [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fast(...
+        [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fast_ramp(...
                 P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
                 Physical_AC_Up, Physical_EV_Up, R_Gen_Max, R_Shed_Max, ...
                 cost_params, risk_E, net_params_safe);
