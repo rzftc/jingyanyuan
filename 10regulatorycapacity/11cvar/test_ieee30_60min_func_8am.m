@@ -2,6 +2,7 @@
 % 功能：IEEE 30 节点系统 VPP 调节能力理论验证 (模块化重构版)
 % 
 % 重构内容：保留所有初始化与网络构建逻辑，将场景 B, C, D, E 封装为独立函数。
+% 修改记录：修正火电调节能力计算逻辑，根据调度方向区分上/下调备用容量。
 
 clear; close all; clc;
 
@@ -96,10 +97,10 @@ for t = 1:T_steps
     if (current_hour_of_day >= 8 && current_hour_of_day < 12) || ...
        (current_hour_of_day >= 14 && current_hour_of_day < 22)
         use_up_potential = false; 
-        direction_signal(t) = -1; % Down
+        direction_signal(t) = -1; % Down: 负荷需减少 (AC/EV 下调)
     else
         use_up_potential = true;
-        direction_signal(t) = 1;  % Up
+        direction_signal(t) = 1;  % Up: 负荷需增加 (AC/EV 上调)
     end
     
     if use_up_potential
@@ -168,6 +169,7 @@ net_params.EvDist = Raw_Dist / sum(Raw_Dist);
 net_params.ShedDist = zeros(N_bus, 1); 
 
 Gen_Pmax = mpc.gen(:, 9);
+Gen_Pmin = mpc.gen(:, 10); % 新增：获取火电最小出力
 Gen_Bus = mpc.gen(:, 1);
 net_params.GenDist = zeros(N_bus, 1);
 for g = 1:length(Gen_Bus)
@@ -199,7 +201,22 @@ Line_RateA = mpc.branch(:, 6);
 estimated_limits = max(Max_Base_Flow * 1.5, Max_Base_Flow + 20);
 net_params.LineLimit = max(Line_RateA, estimated_limits);
 
-R_Gen_Max = max(0, sum(Gen_Pmax) - Total_Sys_Load);
+% --- 修正火电调节能力 (区分上下调) ---
+R_Gen_Up_Cap   = max(0, sum(Gen_Pmax) - Total_Sys_Load);   % 上调备用 (可下调出力)
+R_Gen_Down_Cap = max(0, Total_Sys_Load - sum(Gen_Pmin));   % 下调备用 (可减少出力)
+
+R_Gen_Effective = zeros(T_steps, 1);
+for t = 1:T_steps
+    if direction_signal(t) == 1 
+        % 上调工况 (Load Up, AC/EV吸电): 火电需要减少出力 -> 使用下调备用
+        R_Gen_Effective(t) = R_Gen_Down_Cap(t);
+    else
+        % 下调工况 (Load Down, AC/EV放电/减负荷): 火电需要增加出力 -> 使用上调备用
+        R_Gen_Effective(t) = R_Gen_Up_Cap(t);
+    end
+end
+
+R_Gen_Max = R_Gen_Effective; % 覆盖原变量名，传入后续函数
 R_Shed_Max = 1e6 * ones(T_steps, 1); 
 
 fprintf('物理约束计算完成：线路最大背景潮流 %.2f MW, 修正后最小限额 %.2f MW\n', ...
