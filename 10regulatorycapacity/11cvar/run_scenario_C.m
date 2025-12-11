@@ -26,7 +26,7 @@ function run_scenario_C(strategies, t_axis, P_grid_demand, direction_signal, ...
         legend([h_area(1), h_area(2), h_area(3), h_area(4)], ...
                {'空调 (AC)', '电动汽车 (EV)', '火电调节 (Gen)', '切负荷 (Shed)'}, ...
                'Location', 'northwest', 'FontSize', 12, 'FontName', 'Microsoft YaHei');
-        grid on; xlim([6, 30]); 
+        grid on; xlim([8, 32]); 
         set(gca, 'XTick', x_ticks_set, 'XTickLabel', x_labels_set, 'FontSize', 12, 'FontName', 'Microsoft YaHei');
         print(fig_stack, '多源协同调度堆叠图.png', '-dpng', '-r600');
         
@@ -57,7 +57,7 @@ function run_scenario_C(strategies, t_axis, P_grid_demand, direction_signal, ...
         ylabel('调节功率 (MW)', 'FontSize', 14, 'FontName', 'Microsoft YaHei'); 
         xlabel('时间', 'FontSize', 14, 'FontName', 'Microsoft YaHei');
         legend('Location', 'best', 'FontSize', 12, 'FontName', 'Microsoft YaHei'); 
-        grid on; xlim([6, 30]); 
+        grid on; xlim([8, 32]); 
         set(gca, 'XTick', x_ticks_set, 'XTickLabel', x_labels_set, 'FontSize', 12, 'FontName', 'Microsoft YaHei');
         print(fig_comp, 'AC与EV时序调度量对比_Optimized.png', '-dpng', '-r600');
         

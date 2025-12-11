@@ -121,7 +121,7 @@ for t = 1:T_steps
     if mod(t-1, steps_per_hour_update) == 0
         cap_rel = Effective_Reliable_AC(t) + Effective_Reliable_EV(t);
         cap_phy = Effective_Phys_AC(t) + Effective_Phys_EV(t);
-        current_block_demand = cap_rel + 0.3 * (cap_phy - cap_rel) * rand(); 
+        current_block_demand = cap_rel + 0.5 * (cap_phy - cap_rel) * rand(); 
     end
     P_grid_demand(t) = current_block_demand;
 end
@@ -222,7 +222,6 @@ strategies = run_scenario_B(beta_values, Max_Iter, N_scenarios, N_bus, N_line, d
 run_scenario_C(strategies, t_axis, P_grid_demand, direction_signal, ...
     Reliable_AC_Up, Reliable_EV_Up, Reliable_AC_Down, Reliable_EV_Down, ...
     x_ticks_set, x_labels_set);
-
 %% 3. 运行场景 D: 鲁棒性测试
 run_scenario_D_ramp(strategies, Scenarios_AC_Up, Scenarios_EV_Up, Scenarios_AC_Down, Scenarios_EV_Down, direction_signal);
 

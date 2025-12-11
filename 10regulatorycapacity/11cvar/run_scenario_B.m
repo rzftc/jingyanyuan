@@ -15,7 +15,7 @@ function strategies = run_scenario_B(beta_values, Max_Iter, N_scenarios, N_bus, 
         
         risk_p.beta = beta;
         risk_p.confidence = 0.95;
-        risk_p.rho_pen = 500; 
+        risk_p.rho_pen = 50; 
         risk_p.tight_factor = 0.9;
         
         P_AC_prev = zeros(T_steps, 1); P_EV_prev = zeros(T_steps, 1);
