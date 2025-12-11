@@ -27,11 +27,18 @@ function run_scenario_E(P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
                 cost_params, risk_E, net_params_safe);
                 
         start_row_net = 2 * N_scenarios; 
+        % 位于 run_scenario_B.m 的循环内
         for t = 1:T_steps
             if direction_signal(t) == 1
                 rows_t = start_row_net + (t-1)*2*N_line + (1 : 2*N_line);
+
+                % 1. 翻转 AC 和 EV（代表增加负荷/吸电）—— 原有逻辑，正确
                 A(rows_t, info.idx_P_AC(t)) = -A(rows_t, info.idx_P_AC(t));
                 A(rows_t, info.idx_P_EV(t)) = -A(rows_t, info.idx_P_EV(t));
+
+                % 2. 【新增】翻转 Gen（代表减少发电/等效吸电）—— 修复逻辑
+                % 只有翻转后，P_Gen > 0 才代表“火电出力下降”，对潮流表现为负贡献
+                A(rows_t, info.idx_P_Gen(t)) = -A(rows_t, info.idx_P_Gen(t));
             end
         end
         
