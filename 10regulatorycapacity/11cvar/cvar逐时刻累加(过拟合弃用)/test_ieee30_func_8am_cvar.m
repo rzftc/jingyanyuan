@@ -121,7 +121,7 @@ for t = 1:T_steps
     if mod(t-1, steps_per_hour_update) == 0
         cap_rel = Effective_Reliable_AC(t) + Effective_Reliable_EV(t);
         cap_phy = Effective_Phys_AC(t) + Effective_Phys_EV(t);
-        current_block_demand = cap_rel + 0.6 * (cap_phy - cap_rel) * rand(); 
+        current_block_demand = cap_rel + 0.5 * (cap_phy - cap_rel) * rand(); 
     end
     P_grid_demand(t) = current_block_demand;
 end
@@ -214,7 +214,7 @@ options = optimoptions('quadprog', 'Display', 'off', 'Algorithm', 'interior-poin
 
 %% 1. 运行场景 B: 风险偏好灵敏度分析
 % 返回计算出的策略 (strategies) 供后续场景使用
-strategies = run_scenario_B(beta_values, Max_Iter, N_scenarios, N_bus, N_line, dt, ...
+strategies = run_scenario_B_cvar(beta_values, Max_Iter, N_scenarios, N_bus, N_line, dt, ...
     P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, Physical_AC_Up, Physical_EV_Up, ...
     R_Gen_Max, R_Shed_Max, cost_params, net_params, direction_signal, lambda_SDCI, lambda_Rho, options);
 
@@ -226,7 +226,7 @@ run_scenario_C(strategies, t_axis, P_grid_demand, direction_signal, ...
 run_scenario_D_ramp(strategies, Scenarios_AC_Up, Scenarios_EV_Up, Scenarios_AC_Down, Scenarios_EV_Down, direction_signal);
 
 %% 4. 运行场景 E: 置信水平测试
-run_scenario_E(P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
+run_scenario_E_cvar(P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
     Physical_AC_Up, Physical_EV_Up, R_Gen_Max, R_Shed_Max, ...
     cost_params, net_params, direction_signal, dt, options, N_scenarios, N_line, N_bus);
 

@@ -1,4 +1,4 @@
-function run_scenario_E(P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
+function run_scenario_E_cvar(P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
     Physical_AC_Up, Physical_EV_Up, R_Gen_Max, R_Shed_Max, ...
     cost_params, net_params, direction_signal, dt, options, N_scenarios, N_line, N_bus)
 
@@ -11,7 +11,7 @@ function run_scenario_E(P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
 
     risk_E.beta = 1;
     % risk_E.rho_pen = 10000;
-    risk_E.rho_pen = 100; 
+    risk_E.rho_pen = 50; 
     risk_E.tight_factor = 0.9;
     for k = 1:num_conf
         curr_alpha = confs(k);
@@ -21,12 +21,15 @@ function run_scenario_E(P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
         net_params_safe = net_params;
         net_params_safe.ShedDist = zeros(N_bus, 1);
 
-        [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fast_ramp(...
+        [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fast_ramp_cvar(...
                 P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
                 Physical_AC_Up, Physical_EV_Up, R_Gen_Max, R_Shed_Max, ...
                 cost_params, risk_E, net_params_safe);
-                
-        start_row_net = 2 * N_scenarios; 
+        
+        % [修改点 1] 更新网络约束起始行索引
+        % CVaR 约束现在占用 2 * N_scenarios * T_steps 行
+        start_row_net = 2 * N_scenarios * T_steps; 
+
         for t = 1:T_steps
             if direction_signal(t) == 1
                 rows_t = start_row_net + (t-1)*2*N_line + (1 : 2*N_line);

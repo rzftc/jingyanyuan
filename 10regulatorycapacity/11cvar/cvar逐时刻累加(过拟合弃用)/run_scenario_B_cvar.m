@@ -1,4 +1,4 @@
-function strategies = run_scenario_B(beta_values, Max_Iter, N_scenarios, N_bus, N_line, dt, ...
+function strategies = run_scenario_B_cvar(beta_values, Max_Iter, N_scenarios, N_bus, N_line, dt, ...
     P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, Physical_AC_Up, Physical_EV_Up, ...
     R_Gen_Max, R_Shed_Max, cost_params, net_params, direction_signal, lambda_SDCI, lambda_Rho, options)
 
@@ -15,7 +15,7 @@ function strategies = run_scenario_B(beta_values, Max_Iter, N_scenarios, N_bus, 
         
         risk_p.beta = beta;
         risk_p.confidence = 0.95;
-        risk_p.rho_pen = 100; 
+        risk_p.rho_pen = 50; 
         risk_p.tight_factor = 0.9;
         
         P_AC_prev = zeros(T_steps, 1); P_EV_prev = zeros(T_steps, 1);
@@ -24,13 +24,16 @@ function strategies = run_scenario_B(beta_values, Max_Iter, N_scenarios, N_bus, 
             net_params_safe = net_params;
             net_params_safe.ShedDist = zeros(N_bus, 1);
 
-            [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fast_ramp(...
+            [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fast_ramp_cvar(...
                 P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
                 Physical_AC_Up, Physical_EV_Up, ...
                 R_Gen_Max, R_Shed_Max, ...
                 cost_params, risk_p, net_params_safe);
             
-            start_row_net = 2 * N_scenarios; 
+            % [修改点 1] 更新网络约束起始行索引
+            % 原来是 2 * N_scenarios，现在 CVaR 约束有 2 * N_scenarios * T_steps 行
+            start_row_net = 2 * N_scenarios * T_steps; 
+
             for t = 1:T_steps
                 if direction_signal(t) == 1 
                     rows_t = start_row_net + (t-1)*2*N_line + (1 : 2*N_line);
@@ -55,8 +58,16 @@ function strategies = run_scenario_B(beta_values, Max_Iter, N_scenarios, N_bus, 
                 P_EV_curr = x_opt(info.idx_P_EV);
                 P_Gen_curr = x_opt(info.idx_P_Gen);
                 P_Shed_curr = x_opt(info.idx_P_Shed);
-                eta_val = x_opt(info.idx_eta);
-                z_val = x_opt(info.idx_z);
+                
+                % [修改点 2] 提取 eta 和 z (现在是向量) 并计算平均风险
+                eta_vec = x_opt(info.idx_eta);
+                z_vec   = x_opt(info.idx_z);
+                
+                % 计算每个时刻的 CVaR 贡献，然后取均值作为展示用的“风险值” (MW)
+                % Objective part: sum(beta * eta_t) + coeff * sum(z_{s,t})
+                % 为了保持物理意义 (MW)，我们计算所有时刻 CVaR 的平均值
+                total_risk_sum = sum(eta_vec) + (1 / (N_scenarios * (1 - risk_p.confidence))) * sum(z_vec);
+                cvar_val = total_risk_sum / T_steps; 
                 
                 P_AC_prev = P_AC_curr; P_EV_prev = P_EV_curr;
                 
@@ -80,13 +91,12 @@ function strategies = run_scenario_B(beta_values, Max_Iter, N_scenarios, N_bus, 
                 cost_slack = sum(cost_params.c1_shed * P_Shed_curr * dt); 
                 total_real_cost = cost_gen + cost_slack;
                 
-                cvar_val = eta_val + (1 / (N_scenarios * (1 - risk_p.confidence))) * sum(z_val);
                 b_run_cost(i) = cost_gen;
                 b_slack_sum(i) = sum(P_Shed_curr + P_Gen_curr) * dt;
                 b_risk_val(i) = cvar_val;
 
                 if iter == Max_Iter
-                    fprintf('    发电成本: %.2f (元), 切负荷量: %.2f (MWh), 总成本: %.2f (元), CVaR风险: %.2f (MW), rho: %.4f, sdci: %.4f\n', ...
+                    fprintf('    发电成本: %.2f (元), 切负荷量: %.2f (MWh), 总成本: %.2f (元), 平均CVaR风险: %.2f (MW), rho: %.4f, sdci: %.4f\n', ...
                         cost_gen, b_slack_sum(i), total_real_cost, cvar_val, val_Rho, val_SDCI);
                 end
             else
@@ -110,7 +120,7 @@ function strategies = run_scenario_B(beta_values, Max_Iter, N_scenarios, N_bus, 
         
         yyaxis right; 
         plot(1:3, b_risk_val, 'b-o', 'LineWidth', 2, 'MarkerSize', 8); 
-        ylabel('CVaR 潜在违约风险 (MW)'); 
+        ylabel('平均 CVaR 潜在违约风险 (MW)'); 
         for i = 1:length(b_risk_val)
             text(i, b_risk_val(i), sprintf('%.2f', b_risk_val(i)), ...
                 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', ...
@@ -122,4 +132,3 @@ function strategies = run_scenario_B(beta_values, Max_Iter, N_scenarios, N_bus, 
         print(gcf, '风险偏好灵敏度分析.png', '-dpng', '-r300');
     end
 end
-
