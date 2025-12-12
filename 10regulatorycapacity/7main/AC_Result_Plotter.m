@@ -13,7 +13,7 @@ set(0, 'DefaultTextFontName', 'Microsoft YaHei');
 
 %% === 第一部分：单次仿真结果绘图 ===
 
-mat_filename = 'AC_Stateful_Simulation_Results_5min.mat';
+mat_filename = 'AC_Stateful_Simulation_Results_5min_pi.mat';
 fprintf('检查单次仿真数据文件: %s ...\n', mat_filename);
 
 has_single_result = false;
@@ -252,7 +252,7 @@ fprintf('检查批量仿真文件夹 "%s" ...\n', results_dir);
 if exist(results_dir, 'dir')
     
     % 搜索所有文件
-    file_pattern = fullfile(results_dir, 'AC_Stateful_Simulation_Results_Price_*_limit.mat');
+    file_pattern = fullfile(results_dir, 'AC_Stateful_Simulation_Results_Price_*_pi.mat');
     mat_files = dir(file_pattern);
     
     if isempty(mat_files)
