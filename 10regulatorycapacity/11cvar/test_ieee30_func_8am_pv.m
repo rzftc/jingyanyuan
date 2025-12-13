@@ -193,8 +193,6 @@ plot(t_axis, P_Net_Load, 'g--', 'LineWidth', 1.5, 'DisplayName', '净负荷 (扣
 plot(t_axis, P_Gen_Schedule, 'b-.', 'LineWidth', 1.5, 'DisplayName', '日前发电计划');
 legend('Location', 'best'); 
 ylabel('功率 (MW)'); xlabel('时刻'); 
-% 去掉标题
-% title('IEEE 30 节点系统源荷平衡 (日前调度 15min)'); 
 grid on;
 
 % 修改 X 轴：[8, 32] 对应 08:00 到次日 08:00
@@ -211,8 +209,6 @@ fig2 = figure('Name', 'Regulation_Instruction', 'Color', 'w', 'Position', [100, 
 hold on;
 area(t_axis, P_grid_demand .* direction_signal, 'FaceColor', [0.7 0.7 0.9]);
 ylabel('调节指令 (MW)'); xlabel('时刻'); 
-% 去掉标题
-% title('系统不平衡量 (即下发给 Gen+VPP 的总指令)');
 grid on;
 
 % 修改 X 轴：[8, 32] 对应 08:00 到次日 08:00
@@ -223,8 +219,6 @@ set(gca, 'XTickLabel', {'08:00', '12:00', '16:00', '20:00', '00:00', '04:00', '0
 % 保存为中文文件名
 print(fig2, '调节指令验证.png', '-dpng', '-r600');
 fprintf('  > 已保存: 调节指令验证.png (600 DPI)\n');
-
-
 fprintf('  - 光伏峰值: %.2f MW\n', max(P_PV_Total));
 fprintf('  - 系统总负荷峰值: %.2f MW\n', max(P_System_Total_Load));
 fprintf('  - 调节指令峰值 (绝对值): %.2f MW\n', max(P_grid_demand));
