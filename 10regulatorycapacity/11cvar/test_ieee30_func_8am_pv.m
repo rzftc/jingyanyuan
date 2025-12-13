@@ -188,7 +188,7 @@ Physical_EV_Up  = Effective_Phys_EV;
 % --- 图1：系统功率平衡 ---
 fig1 = figure('Name', 'System_Balance', 'Color', 'w', 'Position', [100, 100, 800, 400]);
 hold on;
-plot(t_axis, P_System_Total_Load, 'k-', 'LineWidth', 1.5, 'DisplayName', '系统总负荷 (含AC/EV基线)');
+plot(t_axis, P_System_Total_Load, 'k-', 'LineWidth', 1.5, 'DisplayName', '系统总负荷 (含AC/EV)');
 plot(t_axis, P_Net_Load, 'g--', 'LineWidth', 1.5, 'DisplayName', '净负荷 (扣除光伏)');
 plot(t_axis, P_Gen_Schedule, 'b-.', 'LineWidth', 1.5, 'DisplayName', '日前发电计划');
 legend('Location', 'best'); 
