@@ -106,7 +106,7 @@ function strategies = run_scenario_B_expand(beta_values, Max_Iter, N_scenarios, 
                 b_risk_val(i) = cvar_val;
 
                 if iter == Max_Iter
-                    fprintf('    发电成本: %.2f (元), 切负荷量: %.2f (MWh), 总成本: %.2f (元), CVaR风险: %.2f (MW), rho: %.4f, sdci: %.4f\n', ...
+                    fprintf('    发电成本: %.2f (元), 火电调节量: %.2f (MWh), 总成本: %.2f (元), CVaR风险: %.2f (MW), rho: %.4f, sdci: %.4f\n', ...
                         cost_gen, b_slack_sum(i), total_real_cost, cvar_val, val_Rho, val_SDCI);
                 end
             else
