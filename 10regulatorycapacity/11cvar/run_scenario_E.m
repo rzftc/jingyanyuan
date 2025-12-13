@@ -11,7 +11,7 @@ function run_scenario_E(P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
 
     risk_E.beta = 1;
     % risk_E.rho_pen = 10000;
-    risk_E.rho_pen = 100; 
+    risk_E.rho_pen = 1000; 
     risk_E.tight_factor = 0.9;
     for k = 1:num_conf
         curr_alpha = confs(k);

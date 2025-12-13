@@ -163,7 +163,7 @@ steps_4h = 4 * steps_per_hour;
 
 % [用户指定]
 % command_levels = [0, 100, 0, -110, 100, -90]; 
-user_commands = [290, 300, 0, -200, 250, -240]; 
+user_commands = [0, 300, 0, -200, 250, -240]; 
 
 for k = 1:length(user_commands)
     start_idx = (k-1)*steps_4h + 1;
