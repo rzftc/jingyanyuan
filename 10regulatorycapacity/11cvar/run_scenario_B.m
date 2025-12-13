@@ -50,9 +50,22 @@ function strategies = run_scenario_B(beta_values, Max_Iter, N_scenarios, N_bus, 
             for idx = idx_pow, H(idx, idx) = H(idx, idx) * dt; end
             f(idx_pow) = f(idx_pow) * dt;
             
+            % --- 关键修改：顺序线性化惩罚迭代 (包含 SDCI 和 Rho) ---
             if iter > 1
+                % 1. 计算上一轮的均值 (用于 Rho 的协方差去均值处理)
+                Mean_AC = mean(P_AC_prev);
+                Mean_EV = mean(P_EV_prev);
+                
+                % 2. SDCI 惩罚项 (减少同向重叠)
+                % 原理：最小化 P_AC * P_EV，线性化为 P_AC * P_EV_prev
                 f(info.idx_P_AC) = f(info.idx_P_AC) + (lambda_SDCI * P_EV_prev * dt);
                 f(info.idx_P_EV) = f(info.idx_P_EV) + (lambda_SDCI * P_AC_prev * dt);
+                
+                % 3. Rho 惩罚项 (减少同向趋势 / 相关性)
+                % 原理：最小化 Cov(AC, EV)，线性化为 P_AC * (P_EV_prev - Mean_EV)
+                % 对应论文公式 (4-36)
+                f(info.idx_P_AC) = f(info.idx_P_AC) + (lambda_Rho * (P_EV_prev - Mean_EV) * dt);
+                f(info.idx_P_EV) = f(info.idx_P_EV) + (lambda_Rho * (P_AC_prev - Mean_AC) * dt);
             end
             
             [x_opt, ~, exitflag] = quadprog(H, f, A, b, Aeq, beq, lb, ub, [], options);
@@ -129,4 +142,3 @@ function strategies = run_scenario_B(beta_values, Max_Iter, N_scenarios, N_bus, 
         print(gcf, '风险偏好灵敏度分析.png', '-dpng', '-r300');
     end
 end
-
