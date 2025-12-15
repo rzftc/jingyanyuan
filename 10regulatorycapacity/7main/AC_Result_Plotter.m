@@ -3,6 +3,7 @@
 %       1. 读取 AC_Stateful_Simulation_Results.mat (单次仿真)
 %       2. 读取 results_AC 文件夹下的批量结果 (不同电价)
 %       3. [新增] 读取不同 dt (5min, 15min, 60min) 的结果进行对比
+%       4. [新增] 绘制激励电价 vs 聚合整体功率特性曲线 (验证死区/饱和区) - 强制包含(0,0)点
 % 依赖：AC_main_Stateful_Sim_potential_diff_inc.m 生成的数据
 
 clear; close all; clc;
@@ -389,6 +390,40 @@ if exist(results_dir, 'dir')
                 print(gcf, '图10_不同电价下AC下调能力对比.png', '-dpng', '-r300');
                 fprintf('  已保存: 图10_不同电价下AC下调能力对比.png\n');
             end
+
+            % --- [新增] 图 11: 激励价格 vs 聚合整体功率特性曲线 (验证死区/饱和区) ---
+            % 说明：提取不同电价下聚合总功率的最大值，验证价格响应特性
+            fprintf('  正在绘制图 11 (激励价格-聚合整体功率特性)...\n');
+            
+            prices_for_curve = [data_list.price];
+            max_powers_for_curve = zeros(size(prices_for_curve));
+            
+            for k = 1:length(data_list)
+                if ~isempty(data_list(k).total_power)
+                    % 提取该价格下的最大聚合功率 (表征容量)
+                    max_powers_for_curve(k) = max(data_list(k).total_power);
+                end
+            end
+            
+            % === [修改] 强制添加 (0,0) 点，防止低价跳变 ===
+            if ~any(prices_for_curve == 0)
+                prices_for_curve = [0, prices_for_curve];
+                max_powers_for_curve = [0, max_powers_for_curve];
+            end
+            
+            % 重新排序确保曲线连贯
+            [prices_for_curve, sort_idx] = sort(prices_for_curve);
+            max_powers_for_curve = max_powers_for_curve(sort_idx);
+            % ==================================================
+            
+            figure('Position', [300 300 800 500]);
+            plot(prices_for_curve, max_powers_for_curve, 'bo-', 'LineWidth', 2, 'MarkerSize', 8, 'MarkerFaceColor', 'b');
+            xlabel('激励电价 (分/kW)', 'FontSize', 12);
+            ylabel('聚合整体功率峰值 (kW)', 'FontSize', 12);
+            grid on; set(gca, 'FontSize', 11);
+            
+            print(gcf, '图11_AC激励价格-聚合整体功率特性.png', '-dpng', '-r300');
+            fprintf('  已保存: 图11_AC激励价格-聚合整体功率特性.png\n');
 
         else
             fprintf('  未提取到有效的批量数据。\n');
