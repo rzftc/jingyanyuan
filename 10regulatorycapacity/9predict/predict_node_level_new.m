@@ -29,7 +29,7 @@ fprintf('预测至: %d\n', predict_end_year);
 
 % 空调 (AC) 历史数据
 AC_Hist_Years = [2021, 2022, 2023, 2024];
-AC_Hist_Data  = [5010e4, 5190e4, 5310e4, 5420e4]; % 5010万, 5190万, 5310万, 5420万台
+AC_Hist_Data  = [4593.6e4, 5259.50e4, 6007.5e4, 6237.0e4]; % 5010万, 5190万, 5310万, 5420万台
 fprintf('\n使用 AC 省级历史数据 (%d-%d): %.0f 万台 ... %.0f 万台\n', ...
     AC_Hist_Years(1), AC_Hist_Years(end), AC_Hist_Data(1)/1e4, AC_Hist_Data(end)/1e4);
 
