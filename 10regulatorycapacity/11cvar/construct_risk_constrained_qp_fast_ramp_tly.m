@@ -1,6 +1,6 @@
-function [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fast_ramp_expand(...
+function [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fast_ramp_tly(...
     P_req, S_AC, S_EV, R_AC, R_EV, R_Gen, R_Shed, cost_p, risk_p, net_p)
-% construct_risk_constrained_qp_fast_ramp_expand (物理约束增强版 + 爬坡约束 + 逐时刻CVaR)
+% construct_risk_constrained_qp_fast_ramp_tly (物理约束增强版 + 爬坡约束 + 逐时刻CVaR)
 %
 % 修正说明：
 %   将 CVaR 约束从“全天总能量违约”修改为“逐时刻功率违约”，
