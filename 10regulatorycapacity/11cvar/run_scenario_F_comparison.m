@@ -1,155 +1,215 @@
-function run_scenario_F_comparison(strategies, P_grid_demand, ...
-    Scenarios_AC_Up, Scenarios_EV_Up, Scenarios_AC_Down, Scenarios_EV_Down, ...
-    Reliable_AC_Up, Reliable_EV_Up, Reliable_AC_Down, Reliable_EV_Down, ...
-    Physical_AC_Up, Physical_EV_Up, Physical_AC_Down, Physical_EV_Down, ...
-    R_Gen_Max, R_Shed_Max, cost_params, net_params, direction_signal, dt, options)
+function run_scenario_F_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_line, dt, ...
+    P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
+    Reliable_AC_Up, Reliable_EV_Up, ... 
+    R_Gen_Max, R_Shed_Max, cost_params, net_params, direction_signal, lambda_SDCI, lambda_Rho, options)
 
-    fprintf('\n>>> 场景 F: 不同调度方法的性能对比分析 (Scenario F) <<<\n');
+    fprintf('\n==========================================================\n');
+    fprintf('>>> 场景 F: 协同约束效益对比分析 (含风险成本验证) <<<\n');
+    fprintf('==========================================================\n');
     
+    % 定义两种情况
+    cases = {'无协同约束 (Baseline)', '有协同约束 (Optimized)'};
+    lambdas_S = [0, lambda_SDCI]; % SDCI 权重
+    lambdas_R = [0, lambda_Rho];  % Rho 权重
+    
+    results = struct();
     T_steps = length(P_grid_demand);
-    [~, N_scenarios] = size(Scenarios_AC_Up);
-    N_bus = size(net_params.PTDF, 2);
-    N_line = size(net_params.PTDF, 1);
     
-    %% 1. 获取三种方法的调度方案
+    % 统一风险参数
+    risk_p.beta = beta_val;
+    risk_p.confidence = 0.95;
+    risk_p.rho_pen = 5000; 
+    risk_p.tight_factor = 0.95; 
     
-    % --- 方法 1: 确定性边界调度 (Deterministic) ---
-    fprintf('  - 计算方法 1: 确定性边界调度...\n');
-    P_Method1 = solve_deterministic_dispatch(P_grid_demand, direction_signal, ...
-        Reliable_AC_Up, Reliable_EV_Up, Reliable_AC_Down, Reliable_EV_Down, ...
-        R_Gen_Max, R_Shed_Max, cost_params, dt, options, T_steps);
-
-    % --- 方法 2: 不考虑资源协同 (Uncoordinated, Beta=10, Lambda=0) ---
-    fprintf('  - 计算方法 2: 不考虑协同的风险调度 (Beta=10, No SDCI/Rho)...\n');
-    risk_p2.beta = 10;
-    risk_p2.confidence = 0.95;
-    risk_p2.rho_pen = 5000;
-    risk_p2.tight_factor = 0.9;
-    
-    % 构造风险模型但不加协同惩罚
-    net_params_safe = net_params;
-    net_params_safe.ShedDist = zeros(N_bus, 1);
-    
-    % 注意：这里需要根据方向选择正确的 Physical Limit，在此简化传入 Up 即可，
-    % construct 函数内部逻辑通常处理 capacity，但为保险起见，这里复用 construct_risk_constrained_qp_fast_ramp_tly
-    % 需确保传入的 Physical 参数与 Scenario B 一致
-    [H2, f2, A2, b2, Aeq2, beq2, lb2, ub2, info2] = construct_risk_constrained_qp_fast_ramp_tly(...
-            P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
-            Physical_AC_Up, Physical_EV_Up, ...
-            R_Gen_Max, R_Shed_Max, ...
-            cost_params, risk_p2, net_params_safe);
+    % 循环运行两种情况
+    for k = 1:2
+        fprintf('  正在运行: %s ...\n', cases{k});
+        
+        l_sdci = lambdas_S(k);
+        l_rho  = lambdas_R(k);
+        
+        P_AC_prev = zeros(T_steps, 1); 
+        P_EV_prev = zeros(T_steps, 1);
+        
+        % 迭代求解
+        for iter = 1:Max_Iter
+            % 1. 构建 QP 问题
+            [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fast_ramp_tly(...
+                P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
+                Reliable_AC_Up, Reliable_EV_Up, ... 
+                R_Gen_Max, R_Shed_Max, ...
+                cost_params, risk_p, net_params);
             
-    % 处理方向信号 (Flip Signs)
-    start_row_net = 2 * N_scenarios; 
-    for t = 1:T_steps
-        if direction_signal(t) == 1
-            rows_t = start_row_net + (t-1)*2*N_line + (1 : 2*N_line);
-            A2(rows_t, info2.idx_P_AC(t)) = -A2(rows_t, info2.idx_P_AC(t));
-            A2(rows_t, info2.idx_P_EV(t)) = -A2(rows_t, info2.idx_P_EV(t));
-            A2(rows_t, info2.idx_P_Gen(t)) = -A2(rows_t, info2.idx_P_Gen(t));
-        end
-    end
-    
-    % 缩放 dt
-    idx_pow2 = [info2.idx_P_AC, info2.idx_P_EV, info2.idx_P_Gen, info2.idx_P_Shed];
-    for idx = idx_pow2, H2(idx, idx) = H2(idx, idx) * dt; end
-    f2(idx_pow2) = f2(idx_pow2) * dt;
-    
-    % 求解 (仅一次，不进行 SDCI 迭代)
-    [x_opt2, ~, flag2] = quadprog(H2, f2, A2, b2, Aeq2, beq2, lb2, ub2, [], options);
-    if flag2 > 0
-        P_Method2.P_AC = x_opt2(info2.idx_P_AC);
-        P_Method2.P_EV = x_opt2(info2.idx_P_EV);
-        P_Method2.P_Gen = x_opt2(info2.idx_P_Gen);
-        P_Method2.P_Shed = x_opt2(info2.idx_P_Shed);
-    else
-        warning('方法 2 求解失败，使用零值代替。');
-        P_Method2.P_AC = zeros(T_steps,1); P_Method2.P_EV = zeros(T_steps,1);
-        P_Method2.P_Gen = zeros(T_steps,1); P_Method2.P_Shed = zeros(T_steps,1);
-    end
-
-    % --- 方法 3: 提议方法 (from Scenario B, Beta=10) ---
-    fprintf('  - 获取方法 3: 提议方法 (Risk + Coordination)...\n');
-    % 假设 strategies{3} 对应 Beta=10 (根据 run_scenario_B_tly 的 beta_values=[0,1,10])
-    if length(strategies) >= 3 && ~isempty(strategies{3})
-        P_Method3 = strategies{3};
-    else
-        error('未找到方法 3 的数据，请确保先运行了场景 B 且 beta_values 包含 10。');
-    end
-
-    %% 2. 性能评估 (基于 1000 个真实场景的回测)
-    methods_list = {P_Method1, P_Method2, P_Method3};
-    method_names = {'确定性边界', '无协同调度', '提议方法'};
-    
-    results = struct('BaseCost', zeros(1,3), 'PenaltyCost', zeros(1,3), 'TotalCost', zeros(1,3));
-    
-    % 设定违约惩罚价格 (通常比调度成本高，用于评估安全性)
-    Penalty_Price = 2000; % 元/MW，用于评估时的虚拟惩罚
-    
-    for m = 1:3
-        st = methods_list{m};
-        
-        % 1. 基础调度成本 (Operational Cost)
-        cost_base = sum((cost_params.c1_ac * st.P_AC + cost_params.c2_ac * st.P_AC.^2)*dt + ...
-                        (cost_params.c1_ev * st.P_EV + cost_params.c2_ev * st.P_EV.^2)*dt + ...
-                        (cost_params.c1_gen * st.P_Gen + cost_params.c2_gen * st.P_Gen.^2)*dt + ...
-                        (cost_params.c1_shed * st.P_Shed)*dt);
-        
-        % 2. 违约风险评估 (Validation against Scenarios)
-        total_violation = 0;
-        
-        for s = 1:N_scenarios
-            % 构建该场景的真实能力
-            Cap_AC_s = zeros(T_steps, 1);
-            Cap_EV_s = zeros(T_steps, 1);
+            % 2. 处理方向信号
+            start_row_net = 2 * N_scenarios; 
             for t = 1:T_steps
-                if direction_signal(t) == 1
-                    Cap_AC_s(t) = Scenarios_AC_Up(t, s);
-                    Cap_EV_s(t) = Scenarios_EV_Up(t, s);
-                else
-                    Cap_AC_s(t) = abs(Scenarios_AC_Down(t, s));
-                    Cap_EV_s(t) = abs(Scenarios_EV_Down(t, s));
+                if direction_signal(t) == 1 % Up Regulation
+                    rows_t = start_row_net + (t-1)*2*N_line + (1 : 2*N_line);
+                    A(rows_t, info.idx_P_AC(t)) = -A(rows_t, info.idx_P_AC(t));
+                    A(rows_t, info.idx_P_EV(t)) = -A(rows_t, info.idx_P_EV(t));
+                    A(rows_t, info.idx_P_Gen(t)) = -A(rows_t, info.idx_P_Gen(t));
                 end
             end
             
-            % 计算违约量
-            viol_ac = max(0, st.P_AC - Cap_AC_s);
-            viol_ev = max(0, st.P_EV - Cap_EV_s);
-            total_violation = total_violation + sum(viol_ac + viol_ev);
+            % 3. 时间步长修正
+            idx_pow = [info.idx_P_AC, info.idx_P_EV, info.idx_P_Gen, info.idx_P_Shed];
+            for idx = idx_pow, H(idx, idx) = H(idx, idx) * dt; end
+            f(idx_pow) = f(idx_pow) * dt;
+            
+            % 4. 添加协同惩罚 (仅在迭代 > 1 时)
+            if iter > 1 && (l_sdci > 0 || l_rho > 0)
+                Mean_AC = mean(P_AC_prev);
+                Mean_EV = mean(P_EV_prev);
+                
+                f(info.idx_P_AC) = f(info.idx_P_AC) + (l_sdci * P_EV_prev * dt);
+                f(info.idx_P_EV) = f(info.idx_P_EV) + (l_sdci * P_AC_prev * dt);
+                
+                f(info.idx_P_AC) = f(info.idx_P_AC) + (l_rho * (P_EV_prev - Mean_EV) * dt);
+                f(info.idx_P_EV) = f(info.idx_P_EV) + (l_rho * (P_AC_prev - Mean_AC) * dt);
+            end
+            
+            % 5. 求解
+            [x_opt, ~, exitflag] = quadprog(H, f, A, b, Aeq, beq, lb, ub, [], options);
+            
+            if exitflag > 0
+                P_AC_curr = x_opt(info.idx_P_AC);
+                P_EV_curr = x_opt(info.idx_P_EV);
+                P_AC_prev = P_AC_curr; 
+                P_EV_prev = P_EV_curr;
+                
+                % --- 新增：计算 CVaR 风险值 ---
+                eta_val = x_opt(info.idx_eta);
+                z_val   = x_opt(info.idx_z);
+                % CVaR = VaR + 尾部期望损失
+                current_cvar = eta_val + (1 / (N_scenarios * (1 - risk_p.confidence))) * sum(z_val);
+            else
+                warning('场景 F 在 %s 迭代 %d 求解失败', cases{k}, iter);
+                current_cvar = NaN;
+            end
         end
         
-        avg_violation = total_violation / N_scenarios;
-        cost_penalty = avg_violation * Penalty_Price * dt; % 期望违约惩罚
+        % 存储结果
+        results(k).P_AC = P_AC_curr;
+        results(k).P_EV = P_EV_curr;
+        results(k).P_Total = P_AC_curr + P_EV_curr;
+        results(k).CVaR = current_cvar; % 记录 CVaR
         
-        results.BaseCost(m) = cost_base;
-        results.PenaltyCost(m) = cost_penalty;
-        results.TotalCost(m) = cost_base + cost_penalty;
+        results(k).Max_Peak = max(results(k).P_Total); 
+        results(k).Std_Dev  = std(results(k).P_Total); 
         
-        fprintf('    [%s] 基础成本: %.2f, 期望违约惩罚: %.2f, 综合性能: %.2f\n', ...
-            method_names{m}, cost_base, cost_penalty, results.TotalCost(m));
+        dummy = ones(T_steps, 1);
+        results(k).Val_SDCI = calculate_SDCI_local(dummy, dummy, P_AC_curr, P_EV_curr);
     end
     
-    %% 3. 绘图对比
-    fig_comp = figure('Name', '三种调度方法性能对比', 'Color', 'w', 'Position', [400, 300, 700, 500]);
+    %% ================= 结果对比输出 =================
+    fprintf('\n----------------------------------------------------------\n');
+    fprintf('指标对比 \t\t| 无约束 (Baseline) \t| 有约束 (Optimized) \t| 改善/变化率\n');
+    fprintf('----------------------------------------------------------\n');
     
-    y_data = [results.BaseCost; results.PenaltyCost]'; % 堆叠数据
-    b = bar(y_data, 'stacked');
+    imp_peak = (results(2).Max_Peak - results(1).Max_Peak) / results(1).Max_Peak * 100; % 变化率
+    imp_std  = (results(1).Std_Dev - results(2).Std_Dev) / results(1).Std_Dev * 100;    % 改善率(下降为优)
+    imp_cvar = (results(1).CVaR - results(2).CVaR) / results(1).CVaR * 100;             % 改善率(下降为优)
     
-    b(1).FaceColor = [0.2 0.6 0.8]; % 基础成本颜色
-    b(2).FaceColor = [0.8 0.4 0.4]; % 违约风险颜色
+    fprintf('聚合峰值 (MW) \t| %.4f \t\t| %.4f \t\t| %+.2f%% (潜力释放)\n', ...
+        results(1).Max_Peak, results(2).Max_Peak, imp_peak);
+    fprintf('波动标准差 \t| %.4f \t\t| %.4f \t\t| -%.2f%% (平抑波动)\n', ...
+        results(1).Std_Dev, results(2).Std_Dev, imp_std);
+    fprintf('CVaR 风险 (MW)\t| %.4f \t\t| %.4f \t\t| -%.2f%% (风险降低)\n', ...
+        results(1).CVaR, results(2).CVaR, imp_cvar);
+    fprintf('----------------------------------------------------------\n');
     
-    set(gca, 'XTickLabel', method_names, 'FontSize', 12, 'FontName', 'Microsoft YaHei');
-    ylabel('综合期望成本 (元)', 'FontSize', 12, 'FontName', 'Microsoft YaHei');
-    legend({'调度运行成本', '潜在违约风险惩罚'}, 'Location', 'northwest');
-    grid on;
+    %% ================= 独立绘图与保存 =================
+    % 通用绘图设置
+    font_name = 'Times New Roman'; 
+    font_size = 12;
     
-    % 在柱顶标注总成本
-    xtips = 1:3;
-    ytips = results.TotalCost;
-    labels = string(round(ytips, 0));
-    text(xtips, ytips, labels, 'HorizontalAlignment', 'center', ...
-        'VerticalAlignment', 'bottom', 'FontSize', 11, 'FontWeight', 'bold');
+    % --- 图 1: 聚合功率曲线对比 ---
+    fig1 = figure('Name', 'F_Power_Curve', 'Color', 'w', 'Position', [100, 100, 600, 400]);
+    hold on;
+    x = 1:T_steps;
     
-    print(fig_comp, '三种调度方法性能对比.png', '-dpng', '-r300');
-    fprintf('  > 绘图已保存: 三种调度方法性能对比.png\n');
+    % 绘制堆叠区域 (有约束)
+    h_ac = area(x, results(2).P_AC, 'FaceColor', [0.6 0.8 1], 'EdgeColor', 'none', 'DisplayName', 'P_{AC} (Optimized)');
+    h_tot = area(x, results(2).P_AC + results(2).P_EV, 'FaceColor', [0.6 1 0.6], 'EdgeColor', 'none', 'FaceAlpha', 0.5, 'DisplayName', 'P_{Total} (Optimized)');
+    
+    % 绘制线条 (无约束)
+    plot(x, results(1).P_Total, 'r--', 'LineWidth', 1.5, 'DisplayName', 'P_{Total} (Baseline)');
+    
+    xlabel('Time Step', 'FontName', font_name, 'FontSize', font_size); 
+    ylabel('Power (MW)', 'FontName', font_name, 'FontSize', font_size);
+    legend([h_ac, h_tot], {'P_{AC} (Optimized)', 'P_{Total} (Optimized)'}, 'Location', 'northwest', 'FontName', font_name);
+    % 注意：这里不再设置 title
+    grid on; box on;
+    set(gca, 'FontName', font_name, 'FontSize', font_size);
+    
+    % 保存 图1
+    print(fig1, 'SceneF_Power_Comparison.png', '-dpng', '-r600');
+    print(fig1, 'SceneF_Power_Comparison.emf', '-dmeta');
+    
+    
+    % --- 图 2: 物理指标对比 (峰值 & 波动率) ---
+    fig2 = figure('Name', 'F_Physical_Metrics', 'Color', 'w', 'Position', [150, 150, 500, 400]);
+    
+    % 数据准备 (为了显示效果，波动率放大10倍显示，或者使用双Y轴，这里采用归一化对比更清晰)
+    % 这里直接画原始值
+    data_phy = [results(1).Max_Peak, results(2).Max_Peak; 
+                results(1).Std_Dev*10, results(2).Std_Dev*10]; % 波动率x10以便同框
+    
+    b = bar(data_phy, 0.6);
+    b(1).FaceColor = [0.8 0.3 0.3]; % 无约束 (红)
+    b(2).FaceColor = [0.3 0.6 0.3]; % 有约束 (绿)
+    
+    ylabel('Value', 'FontName', font_name, 'FontSize', font_size);
+    set(gca, 'XTickLabel', {'Peak Power (MW)', 'Volatility (x10)'}, 'FontName', font_name, 'FontSize', font_size);
+    legend({'Baseline', 'Optimized'}, 'Location', 'best', 'FontName', font_name);
+    grid on; box on;
+    
+    % 数值标注
+    for i = 1:2
+        xt = b(i).XEndPoints;
+        yt = b(i).YEndPoints;
+        for j = 1:length(xt)
+            text(xt(j), yt(j), sprintf('%.2f', yt(j)), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 10, 'FontName', font_name);
+        end
+    end
+    
+    % 保存 图2
+    print(fig2, 'SceneF_Metrics_Comparison.png', '-dpng', '-r600');
+    print(fig2, 'SceneF_Metrics_Comparison.emf', '-dmeta');
+    
+    
+    % --- 图 3: 风险成本 (CVaR) 对比 ---
+    fig3 = figure('Name', 'F_Risk_Metrics', 'Color', 'w', 'Position', [200, 200, 400, 400]);
+    
+    data_risk = [results(1).CVaR, results(2).CVaR];
+    
+    b_risk = bar(data_risk, 0.5);
+    b_risk.FaceColor = 'flat';
+    b_risk.CData(1,:) = [0.8 0.3 0.3]; % 红
+    b_risk.CData(2,:) = [0.3 0.6 0.3]; % 绿
+    
+    ylabel('CVaR Risk Cost (MW)', 'FontName', font_name, 'FontSize', font_size);
+    set(gca, 'XTickLabel', {'Baseline', 'Optimized'}, 'FontName', font_name, 'FontSize', font_size);
+    grid on; box on;
+    
+    % 数值标注
+    xt = b_risk.XEndPoints;
+    yt = b_risk.YEndPoints;
+    text(xt(1), yt(1), sprintf('%.2f', yt(1)), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 12, 'FontName', font_name);
+    text(xt(2), yt(2), sprintf('%.2f', yt(2)), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 12, 'FontName', font_name);
+    
+    % 增加下降箭头或文字说明
+    reduction = (results(1).CVaR - results(2).CVaR);
+    mid_x = mean(xt);
+    mid_y = max(yt) * 1.1;
+    % line([xt(1), xt(2)], [max(yt)*1.05, max(yt)*1.05], 'Color', 'k');
+    text(mid_x, max(yt)*0.5, sprintf('Risk Reduction\n-%.1f%%', imp_cvar), 'HorizontalAlignment', 'center', 'Color', 'b', 'FontWeight', 'bold', 'FontName', font_name);
+    
+    % 保存 图3
+    print(fig3, 'SceneF_Risk_Comparison.png', '-dpng', '-r600');
+    print(fig3, 'SceneF_Risk_Comparison.emf', '-dmeta');
+    
+    fprintf('  > 已保存: SceneF_Power_Comparison.png/.emf\n');
+    fprintf('  > 已保存: SceneF_Metrics_Comparison.png/.emf\n');
+    fprintf('  > 已保存: SceneF_Risk_Comparison.png/.emf\n');
 end

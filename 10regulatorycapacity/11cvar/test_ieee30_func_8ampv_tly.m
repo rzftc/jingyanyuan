@@ -308,7 +308,7 @@ options = optimoptions('quadprog', 'Display', 'off', 'Algorithm', 'interior-poin
 
 %% 1. 运行场景 B: 风险偏好灵敏度分析
 strategies = run_scenario_B_tly(beta_values, Max_Iter, N_scenarios, N_bus, N_line, dt, ...
-    P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, Physical_AC_Up, Physical_EV_Up, ...
+    P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, Effective_Reliable_AC, Effective_Reliable_EV, ...
     R_Gen_Max, R_Shed_Max, cost_params, net_params, direction_signal, lambda_SDCI, lambda_Rho, options);
 
 %% 2. 运行场景 C: 详细调度方案 (Beta=中等)
@@ -321,12 +321,24 @@ run_scenario_D_ramp(strategies, Scenarios_AC_Up, Scenarios_EV_Up, Scenarios_AC_D
 
 %% 4. 运行场景 E: 置信水平测试
 run_scenario_E_tly(P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
-    Physical_AC_Up, Physical_EV_Up, R_Gen_Max, R_Shed_Max, ...
+    Effective_Reliable_AC, Effective_Reliable_EV, R_Gen_Max, R_Shed_Max, ...
     cost_params, net_params, direction_signal, dt, options, N_scenarios, N_line, N_bus);
 
 fprintf('\n所有测试结束。\n');
+%% 5. 运行场景 F: 协同约束效益对比验证
+beta_for_comparison = 50; 
 
+run_scenario_F_comparison(beta_for_comparison, Max_Iter, N_scenarios, N_bus, N_line, dt, ...
+    P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
+    Effective_Reliable_AC, Effective_Reliable_EV, ... % <--- 注意：这里使用可靠边界！
+    R_Gen_Max, R_Shed_Max, cost_params, net_params, direction_signal, lambda_SDCI, lambda_Rho, options);
+%% 5. 运行场景 G: 确定性 vs 随机优化 效益对比分析
+beta_for_G = 50; 
 
+run_scenario_G_comparison(beta_for_G, Max_Iter, N_scenarios, N_bus, N_line, dt, ...
+    P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
+    Effective_Reliable_AC, Effective_Reliable_EV, ... % 传入可靠边界作为确定性优化的依据
+    R_Gen_Max, R_Shed_Max, cost_params, net_params, direction_signal, options);
 %% --- 辅助函数：模拟钟形曲线 ---
 function y = beta_pdf_proxy(x, a, b)
     if x < 0 || x > 1
