@@ -32,7 +32,7 @@ function run_scenario_F_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
         P_EV_prev = zeros(T_steps, 1);
         
         % 迭代求解
-        for iter = 1:Max_Iter
+        for iter = 1:2
             % 1. 构建 QP 问题
             [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fast_ramp_tly(...
                 P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
@@ -129,22 +129,22 @@ function run_scenario_F_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
     x = 1:T_steps;
     
     % 绘制堆叠区域 (有约束)
-    h_ac = area(x, results(2).P_AC, 'FaceColor', [0.6 0.8 1], 'EdgeColor', 'none', 'DisplayName', 'P_{AC} (Optimized)');
-    h_tot = area(x, results(2).P_AC + results(2).P_EV, 'FaceColor', [0.6 1 0.6], 'EdgeColor', 'none', 'FaceAlpha', 0.5, 'DisplayName', 'P_{Total} (Optimized)');
+    h_ac = area(x, results(2).P_AC, 'FaceColor', [0.6 0.8 1], 'EdgeColor', 'none', 'DisplayName', 'P_{AC} (协同)');
+    h_tot = area(x, results(2).P_AC + results(2).P_EV, 'FaceColor', [0.6 1 0.6], 'EdgeColor', 'none', 'FaceAlpha', 0.5, 'DisplayName', 'P_{Total} (协同)');
     
     % 绘制线条 (无约束)
-    plot(x, results(1).P_Total, 'r--', 'LineWidth', 1.5, 'DisplayName', 'P_{Total} (Baseline)');
+    plot(x, results(1).P_Total, 'r--', 'LineWidth', 1.5, 'DisplayName', 'P_{Total} (未协同)');
     
-    xlabel('Time Step', 'FontName', font_name, 'FontSize', font_size); 
-    ylabel('Power (MW)', 'FontName', font_name, 'FontSize', font_size);
-    legend([h_ac, h_tot], {'P_{AC} (Optimized)', 'P_{Total} (Optimized)'}, 'Location', 'northwest', 'FontName', font_name);
+    xlabel('时间步', 'FontName', font_name, 'FontSize', font_size); 
+    ylabel('功率(MW)', 'FontName', font_name, 'FontSize', font_size);
+    legend([h_ac, h_tot], {'P_{AC} (协同)', 'P_{Total} (协同)'}, 'Location', 'northwest', 'FontName', font_name);
     % 注意：这里不再设置 title
     grid on; box on;
     set(gca, 'FontName', font_name, 'FontSize', font_size);
     
     % 保存 图1
-    print(fig1, 'SceneF_Power_Comparison.png', '-dpng', '-r600');
-    print(fig1, 'SceneF_Power_Comparison.emf', '-dmeta');
+    print(fig1, '场景F峰值功率对比.png', '-dpng', '-r600');
+    print(fig1, '场景F峰值功率对比.emf', '-dmeta');
     
     
     % --- 图 2: 物理指标对比 (峰值 & 波动率) ---
@@ -159,9 +159,9 @@ function run_scenario_F_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
     b(1).FaceColor = [0.8 0.3 0.3]; % 无约束 (红)
     b(2).FaceColor = [0.3 0.6 0.3]; % 有约束 (绿)
     
-    ylabel('Value', 'FontName', font_name, 'FontSize', font_size);
-    set(gca, 'XTickLabel', {'Peak Power (MW)', 'Volatility (x10)'}, 'FontName', font_name, 'FontSize', font_size);
-    legend({'Baseline', 'Optimized'}, 'Location', 'best', 'FontName', font_name);
+    ylabel('功率值', 'FontName', font_name, 'FontSize', font_size);
+    set(gca, 'XTickLabel', {'峰值功率 (MW)', '波动率 (x10)'}, 'FontName', font_name, 'FontSize', font_size);
+    legend({'未协同', '协同'}, 'Location', 'best', 'FontName', font_name);
     grid on; box on;
     
     % 数值标注
@@ -174,8 +174,8 @@ function run_scenario_F_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
     end
     
     % 保存 图2
-    print(fig2, 'SceneF_Metrics_Comparison.png', '-dpng', '-r600');
-    print(fig2, 'SceneF_Metrics_Comparison.emf', '-dmeta');
+    print(fig2, '场景F物理指标对比.png', '-dpng', '-r600');
+    print(fig2, '场景F物理指标对比.emf', '-dmeta');
     
     
     % --- 图 3: 风险成本 (CVaR) 对比 ---
@@ -188,7 +188,7 @@ function run_scenario_F_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
     b_risk.CData(1,:) = [0.8 0.3 0.3]; % 红
     b_risk.CData(2,:) = [0.3 0.6 0.3]; % 绿
     
-    ylabel('CVaR Risk Cost (MW)', 'FontName', font_name, 'FontSize', font_size);
+    ylabel('CVaR(MW)', 'FontName', font_name, 'FontSize', font_size);
     set(gca, 'XTickLabel', {'Baseline', 'Optimized'}, 'FontName', font_name, 'FontSize', font_size);
     grid on; box on;
     
@@ -203,13 +203,10 @@ function run_scenario_F_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
     mid_x = mean(xt);
     mid_y = max(yt) * 1.1;
     % line([xt(1), xt(2)], [max(yt)*1.05, max(yt)*1.05], 'Color', 'k');
-    text(mid_x, max(yt)*0.5, sprintf('Risk Reduction\n-%.1f%%', imp_cvar), 'HorizontalAlignment', 'center', 'Color', 'b', 'FontWeight', 'bold', 'FontName', font_name);
+    text(mid_x, max(yt)*0.5, sprintf('风险减小\n-%.1f%%', imp_cvar), 'HorizontalAlignment', 'center', 'Color', 'b', 'FontWeight', 'bold', 'FontName', font_name);
     
     % 保存 图3
-    print(fig3, 'SceneF_Risk_Comparison.png', '-dpng', '-r600');
-    print(fig3, 'SceneF_Risk_Comparison.emf', '-dmeta');
+    print(fig3, '场景F风险对比.png', '-dpng', '-r600');
+    print(fig3, '场景F风险对比.emf', '-dmeta');
     
-    fprintf('  > 已保存: SceneF_Power_Comparison.png/.emf\n');
-    fprintf('  > 已保存: SceneF_Metrics_Comparison.png/.emf\n');
-    fprintf('  > 已保存: SceneF_Risk_Comparison.png/.emf\n');
 end

@@ -127,12 +127,35 @@ Reliable_EV_Base = mean(Scenarios_EV_Base, 2);
 Reliable_AC_Base_95 = quantile(Scenarios_AC_Base, 0.95, 2); 
 Reliable_EV_Base_95 = quantile(Scenarios_EV_Base, 0.95, 2);
 fprintf('提取完成。\n');
+%% ================= 4.5 [新增] 代表性场景聚类 (K-means) =================
+fprintf('正在执行 K-means 聚类提取代表性基线场景...\n');
+n_clusters = 5; % 设定聚类数，建议 3-5
 
+% 1. 构造特征向量
+% 为了捕捉 AC 和 EV 的联合分布特征，我们将两者拼接
+% 特征矩阵 X 维度：[1000, 192] (假设 T=96)
+X_features = [Scenarios_AC_Base; Scenarios_EV_Base]'; 
+
+% 2. 执行 K-means 聚类
+% 'Replicates' 设为 5 以避免局部最优，'MaxIter' 设为 1000
+rng(2024); % 固定种子保证复现
+[idx_cluster, C_centers] = kmeans(X_features, n_clusters, 'Replicates', 5, 'MaxIter', 1000);
+
+% 3. 提取聚类中心作为代表性基线
+% C_centers 维度：[5, 192]
+% 需要拆分回 AC 和 EV，并转置为 [96, 5]
+Reliable_AC_Base_Clusters = C_centers(:, 1:T_steps)'; 
+Reliable_EV_Base_Clusters = C_centers(:, (T_steps+1):end)';
+
+% (可选) 统计每个类的占比，未来可以用作权重，这里暂时不用
+cluster_counts = groupcounts(idx_cluster);
+fprintf('  > 聚类完成，各场景归类统计: %s\n', mat2str(cluster_counts'));
 %% ================= 5. 结果保存 =================
 % 增加了 Reliable_AC_Base 和 Reliable_EV_Base
-save('reliable_regulation_domain_1000_mix_pbase_8am_95.mat', ...
+save('reliable_regulation_domain_1000_mix_pbase_8am_kmeans.mat', ...
     'Scenarios_AC_Up', 'Scenarios_AC_Down', 'Reliable_AC_Up', 'Reliable_AC_Down', ...
     'Scenarios_EV_Up', 'Scenarios_EV_Down', 'Reliable_EV_Up', 'Reliable_EV_Down', ...
-    'Reliable_AC_Base', 'Reliable_EV_Base', 'Reliable_AC_Base_95','Reliable_EV_Base_95',... % <--- 关键新增
+    'Reliable_AC_Base', 'Reliable_EV_Base', 'Reliable_AC_Base_95','Reliable_EV_Base_95',... 
+    'Reliable_AC_Base_Clusters', 'Reliable_EV_Base_Clusters', ...
     'time_points', 'alpha', 'num_scenarios');
 fprintf('数据已保存。\n');

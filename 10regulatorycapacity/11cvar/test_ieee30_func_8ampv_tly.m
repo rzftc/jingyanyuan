@@ -10,7 +10,8 @@ clear; close all; clc;
 
 %% ================= 1. 全局初始化与数据清洗 =================
 fprintf('正在加载场景数据...\n');
-data_file = 'reliable_regulation_domain_1000_mix_pbase_8am.mat';
+% data_file = 'reliable_regulation_domain_1000_mix_pbase_8am.mat';
+data_file = 'reliable_regulation_domain_1000_mix_pbase_8am_kmeans.mat';
 if ~exist(data_file, 'file')
     error('数据文件缺失！请先运行 main_scenario_generation_diff_mix.m');
 end
@@ -22,8 +23,10 @@ Scenarios_AC_Up = clean_data(Scenarios_AC_Up);
 Scenarios_EV_Up = clean_data(Scenarios_EV_Up);
 Scenarios_AC_Down = clean_data(Scenarios_AC_Down);
 Scenarios_EV_Down = clean_data(Scenarios_EV_Down);
-Reliable_AC_Base = clean_data(Reliable_AC_Base);
-Reliable_EV_Base = clean_data(Reliable_EV_Base);
+% Reliable_AC_Base = clean_data(Reliable_AC_Base);
+% Reliable_EV_Base = clean_data(Reliable_EV_Base);
+Reliable_AC_Base = clean_data(Reliable_AC_Base_95);
+Reliable_EV_Base = clean_data(Reliable_EV_Base_95);
 Reliable_AC_Up  = clean_data(Reliable_AC_Up);
 Reliable_EV_Up  = clean_data(Reliable_EV_Up);
 Reliable_AC_Down  = abs(clean_data(Reliable_AC_Down));
@@ -321,12 +324,12 @@ run_scenario_D_ramp(strategies, Scenarios_AC_Up, Scenarios_EV_Up, Scenarios_AC_D
 
 %% 4. 运行场景 E: 置信水平测试
 run_scenario_E_tly(P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
-    Effective_Reliable_AC, Effective_Reliable_EV, R_Gen_Max, R_Shed_Max, ...
+    Physical_AC_Up, Physical_EV_Up, R_Gen_Max, R_Shed_Max, ...
     cost_params, net_params, direction_signal, dt, options, N_scenarios, N_line, N_bus);
 
 fprintf('\n所有测试结束。\n');
 %% 5. 运行场景 F: 协同约束效益对比验证
-beta_for_comparison = 50; 
+beta_for_comparison = 45; 
 
 run_scenario_F_comparison(beta_for_comparison, Max_Iter, N_scenarios, N_bus, N_line, dt, ...
     P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
