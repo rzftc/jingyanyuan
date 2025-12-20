@@ -329,12 +329,12 @@ run_scenario_E_tly(P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
 
 fprintf('\n所有测试结束。\n');
 %% 5. 运行场景 F: 协同约束效益对比验证
-beta_for_comparison = 45; 
+beta_for_comparison = 46; 
 
-run_scenario_F_comparison(beta_for_comparison, Max_Iter, N_scenarios, N_bus, N_line, dt, ...
+run_scenario_F_comparison(beta_for_comparison, 2, N_scenarios, N_bus, N_line, dt, ...
     P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
     Effective_Reliable_AC, Effective_Reliable_EV, ... % <--- 注意：这里使用可靠边界！
-    R_Gen_Max, R_Shed_Max, cost_params, net_params, direction_signal, lambda_SDCI, lambda_Rho, options);
+    R_Gen_Max, R_Shed_Max, cost_params, net_params, direction_signal, 15, 15, options);
 %% 5. 运行场景 G: 确定性 vs 随机优化 效益对比分析
 beta_for_G = 50; 
 

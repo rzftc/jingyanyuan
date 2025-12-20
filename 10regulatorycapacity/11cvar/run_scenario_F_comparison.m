@@ -32,7 +32,7 @@ function run_scenario_F_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
         P_EV_prev = zeros(T_steps, 1);
         
         % 迭代求解
-        for iter = 1:2
+        for iter = 1:Max_Iter
             % 1. 构建 QP 问题
             [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fast_ramp_tly(...
                 P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
@@ -120,7 +120,7 @@ function run_scenario_F_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
     
     %% ================= 独立绘图与保存 =================
     % 通用绘图设置
-    font_name = 'Times New Roman'; 
+    font_name = 'Microsoft YaHei'; 
     font_size = 12;
     
     % --- 图 1: 聚合功率曲线对比 ---
@@ -169,7 +169,7 @@ function run_scenario_F_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
         xt = b(i).XEndPoints;
         yt = b(i).YEndPoints;
         for j = 1:length(xt)
-            text(xt(j), yt(j), sprintf('%.2f', yt(j)), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 10, 'FontName', font_name);
+            text(xt(j), yt(j), sprintf('%.4f', yt(j)), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 10, 'FontName', font_name);
         end
     end
     
@@ -189,14 +189,14 @@ function run_scenario_F_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
     b_risk.CData(2,:) = [0.3 0.6 0.3]; % 绿
     
     ylabel('CVaR(MW)', 'FontName', font_name, 'FontSize', font_size);
-    set(gca, 'XTickLabel', {'Baseline', 'Optimized'}, 'FontName', font_name, 'FontSize', font_size);
+    set(gca, 'XTickLabel', {'未协同', '协同'}, 'FontName', font_name, 'FontSize', font_size);
     grid on; box on;
     
     % 数值标注
     xt = b_risk.XEndPoints;
     yt = b_risk.YEndPoints;
-    text(xt(1), yt(1), sprintf('%.2f', yt(1)), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 12, 'FontName', font_name);
-    text(xt(2), yt(2), sprintf('%.2f', yt(2)), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 12, 'FontName', font_name);
+    text(xt(1), yt(1), sprintf('%.4f', yt(1)), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 12, 'FontName', font_name);
+    text(xt(2), yt(2), sprintf('%.4f', yt(2)), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 12, 'FontName', font_name);
     
     % 增加下降箭头或文字说明
     reduction = (results(1).CVaR - results(2).CVaR);
