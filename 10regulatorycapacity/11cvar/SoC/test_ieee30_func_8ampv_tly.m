@@ -2,16 +2,16 @@
 % 功能：IEEE 30 节点系统 VPP 调节能力理论验证 (日前调度 15min 版)
 % 
 % 修正说明：
-% 1. 步长调整：时间步长从 5 分钟 (dt=5/60) 修改为 15 分钟 (dt=15/60)。
-% 2. 数据处理：对原始 5 分钟分辨率的调节能力数据进行 3:1 下采样，以匹配 96 点/天的日前调度需求。
-% 3. 绘图输出：将源荷平衡图与调节指令图拆分为两个独立的 Figure，并保存为 600 DPI 的高清 PNG。
+% 1. 步长设定：确认输入数据已为 15min 分辨率，不再进行下采样。
+% 2. 规模扩展：将 2000AC/1000EV 数据线性扩展至 10000AC/5000EV (Scale=5)。
+% 3. 聚合参数处理：保留 AC 灰盒参数，**移除 EV 灰盒参数处理** (不再使用期望SOC约束)。
+% 4. 自动对齐：增加数据长度自动截断逻辑，防止索引越界。
 
 clear; close all; clc;
 
 %% ================= 1. 全局初始化与数据清洗 =================
 fprintf('正在加载场景数据...\n');
-% data_file = 'reliable_regulation_domain_1000_mix_pbase_8am.mat';
-data_file = 'reliable_regulation_domain_1000_mix_pbase_8am_kmeans.mat';
+data_file = 'reliable_regulation_domain_soc.mat';
 if ~exist(data_file, 'file')
     error('数据文件缺失！请先运行 main_scenario_generation_diff_mix.m');
 end
@@ -23,8 +23,6 @@ Scenarios_AC_Up = clean_data(Scenarios_AC_Up);
 Scenarios_EV_Up = clean_data(Scenarios_EV_Up);
 Scenarios_AC_Down = clean_data(Scenarios_AC_Down);
 Scenarios_EV_Down = clean_data(Scenarios_EV_Down);
-% Reliable_AC_Base = clean_data(Reliable_AC_Base);
-% Reliable_EV_Base = clean_data(Reliable_EV_Base);
 Reliable_AC_Base = clean_data(Reliable_AC_Base_95);
 Reliable_EV_Base = clean_data(Reliable_EV_Base_95);
 Reliable_AC_Up  = clean_data(Reliable_AC_Up);
@@ -36,25 +34,67 @@ if any(isinf(Scenarios_AC_Up(:)))
     Scenarios_AC_Up(isinf(Scenarios_AC_Up)) = 0;
 end
 
-% --- 关键修改：调整时间步长为 15 分钟 (下采样) ---
-% 原数据通常为 5 分钟分辨率 (288点/天)，日前调度为 15 分钟 (96点/天)
-% 因此需要对输入数据进行下采样 (每3点取1点)
-downsample_ratio = 3; 
+% ================= [关键] 数据对齐与截断 =================
+% 目标长度：取 Reliable_EV_Params.A 的长度 (通常为 96)
+if isfield(Reliable_EV_Params, 'A')
+    target_len = length(Reliable_EV_Params.A);
+    current_len = size(Scenarios_AC_Up, 1);
+    
+    if current_len > target_len
+        fprintf('>>> 自动对齐: 将场景数据长度从 %d 截断为 %d 以匹配参数长度 <<<\n', current_len, target_len);
+        
+        % 1. 截断场景功率数据
+        Scenarios_AC_Up = Scenarios_AC_Up(1:target_len, :);
+        Scenarios_EV_Up = Scenarios_EV_Up(1:target_len, :);
+        Scenarios_AC_Down = Scenarios_AC_Down(1:target_len, :);
+        Scenarios_EV_Down = Scenarios_EV_Down(1:target_len, :);
+        
+        % 2. 截断可靠性边界与基线
+        Reliable_AC_Base = Reliable_AC_Base(1:target_len);
+        Reliable_EV_Base = Reliable_EV_Base(1:target_len);
+        Reliable_AC_Up   = Reliable_AC_Up(1:target_len);
+        Reliable_EV_Up   = Reliable_EV_Up(1:target_len);
+        Reliable_AC_Down = Reliable_AC_Down(1:target_len);
+        Reliable_EV_Down = Reliable_EV_Down(1:target_len);
+    end
+end
+% =======================================================
 
-Scenarios_AC_Up = 5*Scenarios_AC_Up(1:downsample_ratio:end, :);
-Scenarios_EV_Up = 5*Scenarios_EV_Up(1:downsample_ratio:end, :);
-Scenarios_AC_Down = 5*Scenarios_AC_Down(1:downsample_ratio:end, :);
-Scenarios_EV_Down = 5*Scenarios_EV_Down(1:downsample_ratio:end, :);
-Reliable_AC_Base = 5*Reliable_AC_Base(1:downsample_ratio:end);
-Reliable_EV_Base = 5*Reliable_EV_Base(1:downsample_ratio:end);
-Reliable_AC_Up = 5*Reliable_AC_Up(1:downsample_ratio:end);
-Reliable_EV_Up = 5*Reliable_EV_Up(1:downsample_ratio:end);
-Reliable_AC_Down = 5*Reliable_AC_Down(1:downsample_ratio:end);
-Reliable_EV_Down = 5*Reliable_EV_Down(1:downsample_ratio:end);
+% --- [关键] 规模缩放与参数处理 ---
+fprintf('正在处理聚合模型参数 (Scale x5, kW->MW)...\n');
 
+% 规模缩放因子
+Scale_AC = 5; 
+Scale_EV = 5;
+
+% 1. 应用缩放到功率数据
+Scenarios_AC_Up = Scale_AC * Scenarios_AC_Up;
+Scenarios_EV_Up = Scale_EV * Scenarios_EV_Up;
+Scenarios_AC_Down = Scale_AC * Scenarios_AC_Down;
+Scenarios_EV_Down = Scale_EV * Scenarios_EV_Down;
+
+Reliable_AC_Base = Scale_AC * Reliable_AC_Base;
+Reliable_EV_Base = Scale_EV * Reliable_EV_Base;
+
+Reliable_AC_Up = Scale_AC * Reliable_AC_Up;
+Reliable_EV_Up = Scale_EV * Reliable_EV_Up;
+Reliable_AC_Down = Scale_AC * Reliable_AC_Down;
+Reliable_EV_Down = Scale_EV * Reliable_EV_Down;
+
+% 2. 聚合参数处理 (仅处理 AC)
+% AC 参数 (标量)
+AC_Params_Scaled.A = Reliable_AC_Params.A;
+AC_Params_Scaled.B = (Reliable_AC_Params.B / Scale_AC) * 1000; % kW -> MW, Scale corrected
+AC_Params_Scaled.C = Reliable_AC_Params.C;
+
+% [修改] 不再处理 EV 参数，因为我们放弃了 EV 的期望 SOC 约束
+% 仅保留空结构体或必要信息防止报错 (如果下游需要)
+EV_Params_Scaled = []; 
+
+% 获取时间步数
 [T_steps, N_scenarios] = size(Scenarios_AC_Up);
 
-% --- 时间参数 (日前调度：15分钟步长) ---
+% --- 时间参数 ---
 dt_sim = 15/60; % 0.25 小时
 t_axis = 8 : dt_sim : (8 + (T_steps-1)*dt_sim);
 dt = 15/60; 
@@ -80,9 +120,9 @@ Physical_AC_Down  = max(abs(Scenarios_AC_Down), [], 2);
 Physical_EV_Down  = max(abs(Scenarios_EV_Down), [], 2);
 
 % --- 成本参数 ---
-cost_params.c1_ac = 500;      cost_params.c2_ac = 50;     % c2改为5，可以明显看出火电调度量变化  
+cost_params.c1_ac = 500;      cost_params.c2_ac = 50;     
 cost_params.c1_ev = 400;      cost_params.c2_ev = 50;       
-cost_params.c1_gen = 800;    cost_params.c2_gen = 80; % 火电较贵
+cost_params.c1_gen = 800;    cost_params.c2_gen = 80; 
 cost_params.c1_shed = 2e5;    cost_params.c2_shed = 0; 
 
 % --- 优化权重 ---
@@ -115,11 +155,6 @@ Effective_Reliable_EV = zeros(T_steps, 1);
 direction_signal = zeros(T_steps, 1); 
 
 % --- 1. 修正：构建符合物理规律的日负荷曲线 ---
-% t_axis 范围: 8.0 到 32.0 (次日08:00)
-% 设定：
-%   - 早高峰: 10:00 (t=10)
-%   - 晚高峰: 20:00 (t=20)
-%   - 次日早高峰前奏: 10:00 (t=34) -> 用于拉升次日清晨的曲线
 load_curve = 0.55 ...                                     % 基础底荷
            + 0.20 * exp(-((t_axis - 10).^2) / 15) ...     % 当日早高峰 (10:00)
            + 0.45 * exp(-((t_axis - 20).^2) / 12) ...     % 当日晚高峰 (20:00)
@@ -159,7 +194,7 @@ for t = 1:T_steps
     raw_val = P_System_Mismatch(t);
     
     if raw_val < 0
-        direction_signal(t) = 1; % Up Regulation
+        direction_signal(t) = 1; % Up Regulation (Charging/Cooling, Load Increase)
         P_grid_demand(t) = abs(raw_val); 
         Effective_Scen_AC(t,:) = Scenarios_AC_Up(t,:);
         Effective_Scen_EV(t,:) = Scenarios_EV_Up(t,:);
@@ -168,7 +203,7 @@ for t = 1:T_steps
         Effective_Reliable_AC(t) = Reliable_AC_Up(t);
         Effective_Reliable_EV(t) = Reliable_EV_Up(t);
     else
-        direction_signal(t) = -1; % Down Regulation
+        direction_signal(t) = -1; % Down Regulation (Discharging/Heating, Load Decrease)
         P_grid_demand(t) = abs(raw_val);
         Effective_Scen_AC(t,:) = abs(Scenarios_AC_Down(t,:));
         Effective_Scen_EV(t,:) = abs(Scenarios_EV_Down(t,:));
@@ -226,6 +261,7 @@ fprintf('  - 光伏峰值: %.2f MW\n', max(P_PV_Total));
 fprintf('  - 系统总负荷峰值: %.2f MW\n', max(P_System_Total_Load));
 fprintf('  - 调节指令峰值 (绝对值): %.2f MW\n', max(P_grid_demand));
 close all;
+
 %% ================= 4. 构建 IEEE 30 节点网络模型 =================
 fprintf('\n>>> 构建 IEEE 30 节点网络模型 (含光伏与VPP基线) <<<\n');
 
@@ -284,6 +320,12 @@ Max_Base_Flow = max(abs(net_params.BaseFlow), [], 2);
 Line_RateA = mpc.branch(:, 6);
 net_params.LineLimit = max(Line_RateA, Max_Base_Flow + 20); 
 
+% --- [新增] 将灰盒聚合参数注入 net_params ---
+net_params.AC_Params = AC_Params_Scaled;
+net_params.EV_Params = []; % [修改] 置空 EV 参数
+net_params.Reliable_EV_Base = Reliable_EV_Base; 
+net_params.Direction_Signal = direction_signal; 
+
 % --- 修正火电调节能力 ---
 R_Gen_Up_Cap   = max(0, sum(Gen_Pmax) - P_Gen_Schedule);   
 R_Gen_Down_Cap = max(0, P_Gen_Schedule - sum(Gen_Pmin));   
@@ -336,7 +378,7 @@ run_scenario_F_comparison(beta_for_comparison, 2, N_scenarios, N_bus, N_line, dt
     Effective_Reliable_AC, Effective_Reliable_EV, ... % <--- 注意：这里使用可靠边界！
     R_Gen_Max, R_Shed_Max, cost_params, net_params, direction_signal, 15, 15, options);
 %% 5. 运行场景 G: 确定性 vs 随机优化 效益对比分析
-beta_for_G = 50; 
+beta_for_G = 100; 
 
 run_scenario_G_comparison(beta_for_G, Max_Iter, N_scenarios, N_bus, N_line, dt, ...
     P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
