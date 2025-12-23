@@ -4,7 +4,7 @@
 % 修正说明：
 % 1. 步长设定：确认输入数据已为 15min 分辨率，不再进行下采样。
 % 2. 规模扩展：将 2000AC/1000EV 数据线性扩展至 10000AC/5000EV (Scale=5)。
-% 3. 聚合参数处理：保留 AC 灰盒参数，**移除 EV 灰盒参数处理** (不再使用期望SOC约束)。
+% 3. 聚合参数处理：保留 AC 灰盒参数，**恢复 EV 灰盒参数处理** (回归状态空间模型约束)。
 % 4. 自动对齐：增加数据长度自动截断逻辑，防止索引越界。
 
 clear; close all; clc;
@@ -87,9 +87,12 @@ AC_Params_Scaled.A = Reliable_AC_Params.A;
 AC_Params_Scaled.B = (Reliable_AC_Params.B / Scale_AC) * 1000; % kW -> MW, Scale corrected
 AC_Params_Scaled.C = Reliable_AC_Params.C;
 
-% [修改] 不再处理 EV 参数，因为我们放弃了 EV 的期望 SOC 约束
-% 仅保留空结构体或必要信息防止报错 (如果下游需要)
-EV_Params_Scaled = []; 
+% [修改] 恢复 EV 参数处理，用于构建 A/B/C 状态空间约束
+EV_Params_Scaled.A = Reliable_EV_Params.A;
+% B参数单位转换: S(-1 to 1) = B * P(kW). 若 P 变为 MW (x1/1000) 且 Scale (x5), 
+% 则 B_new = (B_old / Scale) * 1000
+EV_Params_Scaled.B = (Reliable_EV_Params.B / Scale_EV) * 1000; 
+EV_Params_Scaled.C = Reliable_EV_Params.C;
 
 % 获取时间步数
 [T_steps, N_scenarios] = size(Scenarios_AC_Up);
@@ -120,8 +123,8 @@ Physical_AC_Down  = max(abs(Scenarios_AC_Down), [], 2);
 Physical_EV_Down  = max(abs(Scenarios_EV_Down), [], 2);
 
 % --- 成本参数 ---
-cost_params.c1_ac = 400;      cost_params.c2_ac = 50;     
-cost_params.c1_ev = 500;      cost_params.c2_ev = 50;       
+cost_params.c1_ac = 500;      cost_params.c2_ac = 5;     
+cost_params.c1_ev = 400;      cost_params.c2_ev = 5;       
 cost_params.c1_gen = 800;    cost_params.c2_gen = 80; 
 cost_params.c1_shed = 2e5;    cost_params.c2_shed = 0; 
 
@@ -322,7 +325,7 @@ net_params.LineLimit = max(Line_RateA, Max_Base_Flow + 20);
 
 % --- [新增] 将灰盒聚合参数注入 net_params ---
 net_params.AC_Params = AC_Params_Scaled;
-net_params.EV_Params = []; % [修改] 置空 EV 参数
+net_params.EV_Params = EV_Params_Scaled; % [修改] 注入EV参数以启用状态空间约束
 net_params.Reliable_EV_Base = Reliable_EV_Base; 
 net_params.Direction_Signal = direction_signal; 
 
