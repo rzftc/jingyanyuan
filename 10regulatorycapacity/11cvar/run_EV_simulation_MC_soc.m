@@ -150,7 +150,7 @@ function [EV_Up_Sum, EV_Down_Sum, EV_Power_Sum, AggParams_EV] = run_EV_simulatio
         t_long_start_minute = (long_idx - 1) * dt_long_minutes;
 
         % 长时间步：聚合与指令分配
-        [lambda_star] = aggregateEVs(EVs, P_tar(long_idx));
+        [lambda_star] = aggregateEVs_mont(EVs, P_tar(long_idx));
         [~, S_agg_next] = calculateVirtualSOC_agg(EVs, dt_long_minutes);
 
         % 短时间步：状态更新
