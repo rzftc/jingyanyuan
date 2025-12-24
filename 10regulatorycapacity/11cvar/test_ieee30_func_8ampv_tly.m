@@ -144,8 +144,8 @@ Physical_AC_Down  = max(abs(Scenarios_AC_Down), [], 2);
 Physical_EV_Down  = max(abs(Scenarios_EV_Down), [], 2);
 
 % --- 成本参数 ---
-cost_params.c1_ac = 400;      cost_params.c2_ac = 50;     
-cost_params.c1_ev = 500;      cost_params.c2_ev = 50;       
+cost_params.c1_ac = 400;      cost_params.c2_ac = 10;     
+cost_params.c1_ev = 500;      cost_params.c2_ev = 10;       
 cost_params.c1_gen = 800;    cost_params.c2_gen = 80; 
 cost_params.c1_shed = 2e5;    cost_params.c2_shed = 0; 
 

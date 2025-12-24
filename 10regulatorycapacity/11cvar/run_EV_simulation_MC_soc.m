@@ -237,7 +237,18 @@ function [EV_Up_Sum, EV_Down_Sum, EV_Power_Sum, AggParams_EV, EV_E_Up_Cum, EV_E_
                      % E_Up: 还能多充多少 (相对于基线 E_actual)
                      temp_e_up_individual(i) = max(0, EV.E_reg_max - EV.E_actual);
                      % E_Down: 还能多放多少 (相对于基线 E_actual)
-                     temp_e_down_individual(i) = max(0, EV.E_actual - EV.E_reg_min);
+                     t_remaining = max(0, t_dep_h - current_absolute_hour);
+                     % 2. 计算"最低可行电量"
+                     % 含义：为了在离网时刻 t_dep 至少达到 E_reg_min，当前时刻电量绝对不能低于这个值。
+                     % 公式：离网目标 - (剩余时间 * 最大充电功率 * 效率)
+                     E_min_feasible_now = EV.E_reg_min - EV.P_N * EV.eta * t_remaining;
+
+                     % 3. 修正物理限制：计算出的底线不能低于电池本身的物理下限 (这里假设物理下限为0)
+                     E_floor_now = max(0, E_min_feasible_now);
+
+                     % 4. 计算下调能量边界 (E_Down Capacity)
+                     % 含义：当前实际电量比"最低底线"高出了多少？这部分能量就是可以被调度拿去放电或削减的。
+                     temp_e_down_individual(i) = max(0, EV.E_actual - E_floor_now);
                 else
                      temp_delta_p_plus_individual(i) = 0;
                      temp_delta_p_minus_individual(i) = 0;
