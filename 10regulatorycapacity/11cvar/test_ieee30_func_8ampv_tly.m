@@ -6,6 +6,7 @@
 % 2. 规模扩展：将 2000AC/1000EV 数据线性扩展至 10000AC/5000EV (Scale=5)。
 % 3. 聚合参数处理：保留 AC 灰盒参数，**移除 EV 灰盒参数处理** (不再使用期望SOC约束)。
 % 4. 自动对齐：增加数据长度自动截断逻辑，防止索引越界。
+% 5. [新增] 引入累积能量约束 (Reliable_EV_E_Up/Down) 并传递给优化模型。
 
 clear; close all; clc;
 
@@ -29,6 +30,17 @@ Reliable_AC_Up  = clean_data(Reliable_AC_Up);
 Reliable_EV_Up  = clean_data(Reliable_EV_Up);
 Reliable_AC_Down  = abs(clean_data(Reliable_AC_Down));
 Reliable_EV_Down  = abs(clean_data(Reliable_EV_Down));
+Reliable_EV_E_Up = quantile(Scenarios_EV_E_Up, 0.2, 2);
+Reliable_EV_E_Down = quantile(Scenarios_EV_E_Down, 0.2, 2);
+% [新增] 能量边界清洗
+if exist('Reliable_EV_E_Up', 'var')
+    Reliable_EV_E_Up = clean_data(Reliable_EV_E_Up);
+    Reliable_EV_E_Down = abs(clean_data(Reliable_EV_E_Down));
+else
+    warning('未找到 Reliable_EV_E_Up/Down 变量，将使用无穷大边界(不约束能量)');
+    Reliable_EV_E_Up = inf(size(Reliable_EV_Up));
+    Reliable_EV_E_Down = inf(size(Reliable_EV_Up));
+end
 
 if any(isinf(Scenarios_AC_Up(:)))
     Scenarios_AC_Up(isinf(Scenarios_AC_Up)) = 0;
@@ -56,6 +68,10 @@ if isfield(Reliable_EV_Params, 'A')
         Reliable_EV_Up   = Reliable_EV_Up(1:target_len);
         Reliable_AC_Down = Reliable_AC_Down(1:target_len);
         Reliable_EV_Down = Reliable_EV_Down(1:target_len);
+        
+        % [新增] 截断能量边界
+        Reliable_EV_E_Up   = Reliable_EV_E_Up(1:target_len);
+        Reliable_EV_E_Down = Reliable_EV_E_Down(1:target_len);
     end
 end
 % =======================================================
@@ -80,6 +96,10 @@ Reliable_AC_Up = Scale_AC * Reliable_AC_Up;
 Reliable_EV_Up = Scale_EV * Reliable_EV_Up;
 Reliable_AC_Down = Scale_AC * Reliable_AC_Down;
 Reliable_EV_Down = Scale_EV * Reliable_EV_Down;
+
+% [新增] 应用缩放到能量边界 (能量与功率线性相关，Scale相同)
+Reliable_EV_E_Up = Scale_EV * Reliable_EV_E_Up;
+Reliable_EV_E_Down = Scale_EV * Reliable_EV_E_Down;
 
 % 2. 聚合参数处理 (仅处理 AC)
 % AC 参数 (标量)
@@ -113,6 +133,10 @@ Reliable_AC_Up = Reliable_AC_Up(:) * unit_scale;
 Reliable_EV_Up = Reliable_EV_Up(:) * unit_scale;
 Reliable_AC_Down = Reliable_AC_Down(:) * unit_scale;
 Reliable_EV_Down = Reliable_EV_Down(:) * unit_scale;
+
+% [新增] 能量边界单位转换 (kWh -> MWh)
+Reliable_EV_E_Up = Reliable_EV_E_Up(:) * unit_scale;
+Reliable_EV_E_Down = Reliable_EV_E_Down(:) * unit_scale;
 
 Physical_AC_Up  = max(Scenarios_AC_Up, [], 2);
 Physical_EV_Up  = max(Scenarios_EV_Up, [], 2);
@@ -184,7 +208,7 @@ end
 P_Net_Load = P_System_Total_Load - P_PV_Total;
 
 % --- 4. 制定“日前发电计划” ---
-P_Gen_Schedule = movmean(P_Net_Load, floor(5/dt)); 
+P_Gen_Schedule = movmean(P_Net_Load, floor(4.5/dt)); 
 
 % --- 5. 生成调节指令 ---
 P_System_Mismatch = P_Net_Load - P_Gen_Schedule;
@@ -325,6 +349,11 @@ net_params.AC_Params = AC_Params_Scaled;
 net_params.EV_Params = []; % [修改] 置空 EV 参数
 net_params.Reliable_EV_Base = Reliable_EV_Base; 
 net_params.Direction_Signal = direction_signal; 
+
+% [新增] 将能量边界和时间步长注入 net_params
+net_params.Reliable_EV_E_Up = Reliable_EV_E_Up;
+net_params.Reliable_EV_E_Down = Reliable_EV_E_Down;
+net_params.dt = dt;
 
 % --- 修正火电调节能力 ---
 R_Gen_Up_Cap   = max(0, sum(Gen_Pmax) - P_Gen_Schedule);   

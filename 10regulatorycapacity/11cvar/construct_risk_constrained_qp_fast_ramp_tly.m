@@ -2,6 +2,7 @@ function [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fa
     P_req, S_AC, S_EV, R_AC, R_EV, R_Gen, R_Shed, cost_p, risk_p, net_p)
 % construct_risk_constrained_qp_fast_ramp_tly 
 % 修改：仅保留 AC 灰盒约束，移除 EV 状态约束。
+% [新增] 增加 EV 累积能量约束
 
     [T, N_scenarios] = size(S_AC);
     N_line = size(net_p.PTDF, 1);
@@ -9,6 +10,17 @@ function [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fa
     % 提取参数
     ac_p = net_p.AC_Params;
     dir_sig = net_p.Direction_Signal; 
+    
+    % [新增] 提取能量边界参数
+    if isfield(net_p, 'Reliable_EV_E_Up') && isfield(net_p, 'dt')
+        E_Up_Bound = net_p.Reliable_EV_E_Up;
+        E_Down_Bound = net_p.Reliable_EV_E_Down;
+        dt = net_p.dt;
+        enable_energy_constraint = true;
+    else
+        enable_energy_constraint = false;
+        warning('未检测到能量边界参数，EV能量约束未启用。');
+    end
 
     %% 1. 变量索引
     idx_P_AC   = 1:T;
@@ -23,6 +35,7 @@ function [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fa
     
     % 变量总数
     num_vars = idx_S_AC(end);
+    
     %% 2. 目标函数
     H = sparse(num_vars, num_vars);
     H(sub2ind(size(H), idx_P_AC,   idx_P_AC))   = 2 * cost_p.c2_ac   + 1e-6;
@@ -34,23 +47,7 @@ function [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fa
     
     % AC状态变量微小正则
     H(sub2ind(size(H), idx_S_AC, idx_S_AC))     = 1e-9;
-   % %% [新增] 能量累积惩罚项 (Soft Energy Constraint)
-   %  if isfield(cost_p, 'lambda_energy')
-   %      lambda_E = cost_p.lambda_energy; 
-   %  else
-   %      lambda_E = 1; % 默认值
-   %  end
-   %  L_mat = tril(ones(T, T));
-   % 
-   %  dt_val = 15/60; 
-   %  H_energy_block = 2 * lambda_E * (dt_val^2) * (L_mat' * L_mat);
-   % 
-   %  H(idx_P_EV, idx_P_EV) = H(idx_P_EV, idx_P_EV) + sparse(H_energy_block);
-   %  H = (H + H') / 2;
-   %  diag_indices = 1:num_vars;
-   %  H(sub2ind(size(H), diag_indices, diag_indices)) = ...
-   %      H(sub2ind(size(H), diag_indices, diag_indices)) + 1e-9;
-%% 
+
     f = zeros(num_vars, 1);
     f(idx_P_AC)   = cost_p.c1_ac;
     f(idx_P_EV)   = cost_p.c1_ev;
@@ -65,7 +62,7 @@ function [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fa
     num_bal_con = T;
     
     % --- 3.2 状态演化 (仅 AC) ---
-    num_state_con = T; % 原来是 2*T，现在减半
+    num_state_con = T; 
     total_eq = num_bal_con + num_state_con;
     
     Aeq = sparse(total_eq, num_vars);
@@ -85,29 +82,20 @@ function [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fa
     
     % 填充 AC 状态约束 (T+1 : 2T)
     row_offset = T;
-    
-    % AC Params (Scalar)
     ac_A = ac_p.A; ac_B = ac_p.B; ac_C = ac_p.C;
     
     for t = 1:T
         % === AC State Constraint ===
         row_ac = row_offset + t;
-        
-        % S_AC(t)
         Aeq(row_ac, idx_S_AC(t)) = 1;
-        
-        % - A * S_AC(t-1)
         if t > 1
             Aeq(row_ac, idx_S_AC(t-1)) = -ac_A;
             rhs_ac = ac_C;
         else
             rhs_ac = ac_A * S_AC_0 + ac_C;
         end
-        
-        % - B * dir(t) * P_AC(t)
         coef_p_ac = ac_B * dir_sig(t);
         Aeq(row_ac, idx_P_AC(t)) = -coef_p_ac;
-        
         beq(row_ac) = rhs_ac;
     end
 
@@ -127,32 +115,14 @@ function [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fa
     
     A_cvar1 = sparse([i_pac; i_pev; i_eta; i_z], [j_pac; j_pev; j_eta; j_z], [v_pac; v_pev; v_eta; v_z], num_con_cvar, num_vars);
     
-    % 计算 b_cvar1
-    % 注意：R_AC 和 R_EV 在这里是 (T x N) 的可靠边界样本
     R_AC_bound = zeros(num_con_cvar, 1);
     R_EV_bound = zeros(num_con_cvar, 1);
-    
-    % 展开边界
     for s = 1:N_scenarios
         start_idx = (s-1)*T + 1;
         end_idx = s*T;
-        
-        % S_AC 和 S_EV 传入的是场景边界
-        % 这里逻辑是：违约量 > P - P_max
-        % 所以 A * x <= P_max - eta - z ... 不对，标准 CVaR 约束形式：
-        % z >= Loss - eta => Loss - z - eta <= 0 => Loss <= z + eta
-        % Loss = rho * (P - P_max)
-        % rho*P - rho*P_max <= z + eta
-        % rho*P - z - eta <= rho*P_max
-        
-        % 取该场景的边界
-        R_AC_s = S_AC(:, s); % 这里 S_AC 实参是 Scenarios_AC_Up
-        R_EV_s = S_EV(:, s); 
-        
-        R_AC_bound(start_idx:end_idx) = R_AC_s;
-        R_EV_bound(start_idx:end_idx) = R_EV_s;
+        R_AC_bound(start_idx:end_idx) = S_AC(:, s); 
+        R_EV_bound(start_idx:end_idx) = S_EV(:, s); 
     end
-    
     b_cvar1 = rho * (R_AC_bound + R_EV_bound);
 
     rows_eta = (1:N_scenarios)'; cols_eta = repmat(idx_eta, N_scenarios, 1); vals_eta = repmat(-1, N_scenarios, 1);
@@ -186,7 +156,6 @@ function [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fa
     % 爬坡约束
     A_ramp = sparse(0, num_vars); b_ramp = zeros(0, 1);
     if T > 1
-        % AC/EV/Gen ramp params
         if isfield(risk_p, 'ramp_ac') && ~isempty(risk_p.ramp_ac), ramp_ac = risk_p.ramp_ac(:); else, ramp_ac = 999 * ones(T-1, 1); end
         if isfield(risk_p, 'ramp_ev') && ~isempty(risk_p.ramp_ev), ramp_ev = risk_p.ramp_ev(:); else, ramp_ev = 999 * ones(T-1, 1); end
         if isfield(risk_p, 'ramp_gen') && ~isempty(risk_p.ramp_gen), ramp_gen = risk_p.ramp_gen(:); else, ramp_gen = 999 * ones(T-1, 1); end
@@ -197,21 +166,49 @@ function [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fa
         k = 0;
         for t = 2:T
              tt = t-1;
-             % AC
              k=k+1; A_ramp(k, idx_P_AC(t))=1; A_ramp(k, idx_P_AC(t-1))=-1; b_ramp(k)=ramp_ac(min(tt,end));
              k=k+1; A_ramp(k, idx_P_AC(t))=-1; A_ramp(k, idx_P_AC(t-1))=1; b_ramp(k)=ramp_ac(min(tt,end));
-             % EV
              k=k+1; A_ramp(k, idx_P_EV(t))=1; A_ramp(k, idx_P_EV(t-1))=-1; b_ramp(k)=ramp_ev(min(tt,end));
              k=k+1; A_ramp(k, idx_P_EV(t))=-1; A_ramp(k, idx_P_EV(t-1))=1; b_ramp(k)=ramp_ev(min(tt,end));
-             % Gen
              k=k+1; A_ramp(k, idx_P_Gen(t))=1; A_ramp(k, idx_P_Gen(t-1))=-1; b_ramp(k)=ramp_gen(min(tt,end));
              k=k+1; A_ramp(k, idx_P_Gen(t))=-1; A_ramp(k, idx_P_Gen(t-1))=1; b_ramp(k)=ramp_gen(min(tt,end));
         end
         A_ramp = A_ramp(1:k, :); b_ramp = b_ramp(1:k);
     end
 
-    A = [A_cvar1; A_cvar2; A_net; A_ramp];
-    b = [b_cvar1; b_cvar2; b_net; b_ramp];
+    % [新增] 累积能量约束 (Cumulative Energy Constraint)
+    % 约束逻辑：-E_Down(k) <= sum(dir(t)*P(t)*dt) <= E_Up(k)
+    A_energy = sparse(0, num_vars); b_energy = zeros(0, 1);
+    
+    if enable_energy_constraint
+        % 我们有 2*T 个约束：T 个上限，T 个下限
+        num_energy_con = 2 * T;
+        A_energy = sparse(num_energy_con, num_vars);
+        b_energy = zeros(num_energy_con, 1);
+        
+        for k = 1:T
+            % 构建累积系数向量：对于 t=1...k，系数为 dir_sig(t) * dt
+            % 注意：dir_sig > 0 表示上调(充电)，能量增加；dir_sig < 0 表示下调(放电)，能量减少
+            
+            % 上限约束行 (Row k)
+            % sum_{t=1}^k [dir(t)*dt] * P_EV(t) <= E_Up_Bound(k)
+            for t = 1:k
+                A_energy(k, idx_P_EV(t)) = dir_sig(t) * dt;
+            end
+            b_energy(k) = E_Up_Bound(k);
+            
+            % 下限约束行 (Row T+k)
+            % sum_{t=1}^k [dir(t)*dt] * P_EV(t) >= -E_Down_Bound(k)
+            % => sum_{t=1}^k [-dir(t)*dt] * P_EV(t) <= E_Down_Bound(k)
+            for t = 1:k
+                A_energy(T+k, idx_P_EV(t)) = -dir_sig(t) * dt;
+            end
+            b_energy(T+k) = E_Down_Bound(k);
+        end
+    end
+
+    A = [A_cvar1; A_cvar2; A_net; A_ramp; A_energy];
+    b = [b_cvar1; b_cvar2; b_net; b_ramp; b_energy];
 
     %% 5. 变量边界
     lb = -inf(num_vars, 1); ub = inf(num_vars, 1);
@@ -222,13 +219,10 @@ function [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fa
     lb(idx_P_Shed) = 0; ub(idx_P_Shed) = R_Shed(:);
     lb(idx_eta) = -1e10; lb(idx_z) = 0;
 
-    % [修改] 仅保留 AC 状态变量边界
-    % AC: 0 <= S <= 1
     lb(idx_S_AC) = 0; ub(idx_S_AC) = 1;
 
     %% 6. 输出信息
     info.idx_P_AC = idx_P_AC; info.idx_P_EV = idx_P_EV; info.idx_P_Gen = idx_P_Gen; info.idx_P_Shed = idx_P_Shed;
     info.idx_eta = idx_eta; info.idx_z = idx_z;
     info.idx_S_AC = idx_S_AC; 
-    % info.idx_S_EV 已移除
 end

@@ -1,9 +1,10 @@
-function [EV_Up_Sum, EV_Down_Sum, EV_Power_Sum, AggParams_EV] = run_EV_simulation_MC_soc(random_seed, evFileName)
+function [EV_Up_Sum, EV_Down_Sum, EV_Power_Sum, AggParams_EV, EV_E_Up_Cum, EV_E_Down_Cum] = run_EV_simulation_MC_soc(random_seed, evFileName)
     % run_EV_simulation_MC
     % 修改说明：
     % 1. 输入参数改为 random_seed，用于控制蒙特卡洛模拟的随机性。
     % 2. 内部 P_grid_command_24 强制设为 0，计算自然状态下的调节潜力边界。
     % 3. [新增] 输出 AggParams_EV，包含时变聚合参数 A(t), B(t), C(t)。
+    % 4. [新增] 输出 EV_E_Up_Cum, EV_E_Down_Cum，包含累积能量边界（能量包络）。
 
     P_grid_command_24 = zeros(24, 1); % 【修改点1】强制基准指令为0
 
@@ -51,9 +52,13 @@ function [EV_Up_Sum, EV_Down_Sum, EV_Power_Sum, AggParams_EV] = run_EV_simulatio
     num_evs = length(EVs);
     
     % 输出容器
-    results_EV_Up_Sum = zeros(1, total_steps);
-    results_EV_Down_Sum = zeros(1, total_steps);
+    results_EV_Up_Individual_Sum = zeros(1, total_steps);
+    results_EV_Down_Individual_Sum = zeros(1, total_steps);
     results_P_agg = zeros(1, total_steps);
+    
+    % [新增] 能量边界输出容器
+    results_EV_E_Up_Individual_Sum = zeros(1, total_steps);
+    results_EV_E_Down_Individual_Sum = zeros(1, total_steps);
 
     %% 初始化参数 (向量化)
     base_Price_vec = 30 * ones(num_evs, 1);
@@ -130,8 +135,6 @@ function [EV_Up_Sum, EV_Down_Sum, EV_Power_Sum, AggParams_EV] = run_EV_simulatio
     ptcp_vec = [EVs.ptcp]'; % 只有参与聚合的车辆才计入参数
 
     % 计算 Kappa1, Kappa2 (公式 2-17/2-47)
-    % Kappa1 = - C * r / (eta * dt_h)
-    % Kappa2 =   C * r / (eta * dt_h)
     Kappa1_all = - (C_vec .* r_vec) ./ (eta_vec .* dt);
     Kappa2_all =   (C_vec .* r_vec) ./ (eta_vec .* dt);
 
@@ -161,7 +164,6 @@ function [EV_Up_Sum, EV_Down_Sum, EV_Power_Sum, AggParams_EV] = run_EV_simulatio
             current_absolute_hour = time_points_absolute(step_idx);
 
             % === [新增] 计算当前时刻的聚合参数 ===
-            % 判断哪些车辆在线且参与聚合
             is_connected = (t_in_h_vec <= current_absolute_hour) & (t_dep_h_vec > current_absolute_hour) & ptcp_vec;
             
             if any(is_connected)
@@ -169,8 +171,6 @@ function [EV_Up_Sum, EV_Down_Sum, EV_Power_Sum, AggParams_EV] = run_EV_simulatio
                 Sum_K2 = sum(Kappa2_all(is_connected));
                 Sum_K3 = sum(Kappa3_all(is_connected));
                 
-                % 公式 2-56: S(t+1) = (1/SumK1) * P(t) - (SumK2/SumK1) * S(t) - (SumK3/SumK1)
-                % 对应 A = -SumK2/SumK1, B = 1/SumK1, C = -SumK3/SumK1
                 if abs(Sum_K1) > 1e-6
                     Agg_A_trace(step_idx) = - Sum_K2 / Sum_K1;
                     Agg_B_trace(step_idx) =   1 / Sum_K1;
@@ -186,6 +186,10 @@ function [EV_Up_Sum, EV_Down_Sum, EV_Power_Sum, AggParams_EV] = run_EV_simulatio
             temp_delta_p_plus_individual = zeros(num_evs, 1);
             temp_delta_p_minus_individual = zeros(num_evs, 1);
             temp_P_current = zeros(num_evs, 1);
+            
+            % [新增] 临时能量边界容器
+            temp_e_up_individual = zeros(num_evs, 1);
+            temp_e_down_individual = zeros(num_evs, 1);
             
             EVs_in_parfor = EVs;
 
@@ -220,6 +224,7 @@ function [EV_Up_Sum, EV_Down_Sum, EV_Power_Sum, AggParams_EV] = run_EV_simulatio
                      P_base_i = EV.P_base_sequence(step_idx); 
                      t_dep_h = EV.t_dep / 60; 
 
+                     % 1. 功率边界计算
                      [DeltaP_plus_i, DeltaP_minus_i] = calculateEVAdjustmentPotentia_new(...
                          EV.E_reg_min, EV.E_reg_max, EV.E_actual, ... 
                          t_dep_h, current_absolute_hour, ...
@@ -227,9 +232,17 @@ function [EV_Up_Sum, EV_Down_Sum, EV_Power_Sum, AggParams_EV] = run_EV_simulatio
                      
                      temp_delta_p_plus_individual(i) = DeltaP_plus_i;
                      temp_delta_p_minus_individual(i) = DeltaP_minus_i;
+                     
+                     % 2. [新增] 能量边界计算 (累积偏差容量)
+                     % E_Up: 还能多充多少 (相对于基线 E_actual)
+                     temp_e_up_individual(i) = max(0, EV.E_reg_max - EV.E_actual);
+                     % E_Down: 还能多放多少 (相对于基线 E_actual)
+                     temp_e_down_individual(i) = max(0, EV.E_actual - EV.E_reg_min);
                 else
                      temp_delta_p_plus_individual(i) = 0;
                      temp_delta_p_minus_individual(i) = 0;
+                     temp_e_up_individual(i) = 0;
+                     temp_e_down_individual(i) = 0;
                 end
 
                 EVs_in_parfor(i) = EV;
@@ -240,6 +253,10 @@ function [EV_Up_Sum, EV_Down_Sum, EV_Power_Sum, AggParams_EV] = run_EV_simulatio
             results_P_agg(step_idx) = sum(temp_P_current);
             results_EV_Up_Individual_Sum(step_idx) = sum(temp_delta_p_plus_individual);
             results_EV_Down_Individual_Sum(step_idx) = sum(temp_delta_p_minus_individual);
+            
+            % [新增] 记录能量边界结果
+            results_EV_E_Up_Individual_Sum(step_idx) = sum(temp_e_up_individual);
+            results_EV_E_Down_Individual_Sum(step_idx) = sum(temp_e_down_individual);
         end
         
         S_agg_current = S_agg_next;
@@ -249,6 +266,10 @@ function [EV_Up_Sum, EV_Down_Sum, EV_Power_Sum, AggParams_EV] = run_EV_simulatio
     EV_Up_Sum = results_EV_Up_Individual_Sum(:);
     EV_Down_Sum = results_EV_Down_Individual_Sum(:);
     EV_Power_Sum = results_P_agg(:);
+    
+    % [新增] 输出累积能量边界
+    EV_E_Up_Cum = results_EV_E_Up_Individual_Sum(:);
+    EV_E_Down_Cum = results_EV_E_Down_Individual_Sum(:);
     
     % [新增] 组装聚合参数输出
     AggParams_EV.A = Agg_A_trace;

@@ -39,6 +39,9 @@ temp_EV_Up     = cell(1, num_scenarios);
 temp_EV_Down   = cell(1, num_scenarios);
 temp_EV_Base   = cell(1, num_scenarios);
 temp_EV_Params = cell(1, num_scenarios); % [新增]
+% [新增] 能量边界临时存储
+temp_EV_E_Up   = cell(1, num_scenarios);
+temp_EV_E_Down = cell(1, num_scenarios);
 
 if isempty(gcp('nocreate')), parpool; end
 
@@ -54,19 +57,23 @@ parfor s = 1:num_scenarios
     % --- AC 仿真 (接收基线和参数) ---
     [ac_up, ac_down, ac_base, ac_params] = run_AC_simulation_MC_soc(current_seed, temp_ac_file);
     
-    % --- EV 仿真 (接收基线和参数) ---
-    [ev_up, ev_down, ev_power_profile, ev_params] = run_EV_simulation_MC_soc(current_seed, temp_ev_file);
+    % --- EV 仿真 (接收基线、参数以及新增的能量边界) ---
+    [ev_up, ev_down, ev_power_profile, ev_params, ev_e_up, ev_e_down] = run_EV_simulation_MC_soc(current_seed, temp_ev_file);
     
     % 存储结果
     temp_AC_Up{s}   = ac_up;
     temp_AC_Down{s} = ac_down;
     temp_AC_Base{s} = ac_base; 
-    temp_AC_Params{s} = ac_params; % 保存 AC 参数
+    temp_AC_Params{s} = ac_params; 
     
     temp_EV_Up{s}   = ev_up;
     temp_EV_Down{s} = ev_down;
     temp_EV_Base{s} = ev_power_profile; 
-    temp_EV_Params{s} = ev_params; % 保存 EV 参数
+    temp_EV_Params{s} = ev_params;
+    
+    % [新增] 存储能量边界
+    temp_EV_E_Up{s}   = ev_e_up;
+    temp_EV_E_Down{s} = ev_e_down;
     
     if exist(temp_ev_file, 'file'), delete(temp_ev_file); end
     if exist(temp_ac_file, 'file'), delete(temp_ac_file); end
@@ -86,6 +93,10 @@ Scenarios_EV_Up   = zeros(T_steps, num_scenarios);
 Scenarios_EV_Down = zeros(T_steps, num_scenarios);
 Scenarios_EV_Base = zeros(T_steps, num_scenarios); 
 
+% [新增] 能量边界数据整理
+Scenarios_EV_E_Up   = zeros(T_steps, num_scenarios);
+Scenarios_EV_E_Down = zeros(T_steps, num_scenarios);
+
 for s = 1:num_scenarios
     % AC 对齐
     ac_up = temp_AC_Up{s}; ac_down = temp_AC_Down{s}; ac_base = temp_AC_Base{s};
@@ -100,17 +111,25 @@ for s = 1:num_scenarios
         Scenarios_AC_Base(1:len_ac, s) = ac_base;
     end
     
-    % EV 对齐
+    % EV 对齐 (包含功率与能量)
     ev_up = temp_EV_Up{s}; ev_down = temp_EV_Down{s}; ev_base = temp_EV_Base{s};
+    ev_e_up = temp_EV_E_Up{s}; ev_e_down = temp_EV_E_Down{s}; % [新增]
+    
     len_ev = length(ev_up);
     if len_ev >= T_steps
         Scenarios_EV_Up(:, s) = ev_up(1:T_steps);
         Scenarios_EV_Down(:, s) = ev_down(1:T_steps);
         Scenarios_EV_Base(:, s) = ev_base(1:T_steps);
+        
+        Scenarios_EV_E_Up(:, s) = ev_e_up(1:T_steps);     % [新增]
+        Scenarios_EV_E_Down(:, s) = ev_e_down(1:T_steps); % [新增]
     else
         Scenarios_EV_Up(1:len_ev, s) = ev_up;
         Scenarios_EV_Down(1:len_ev, s) = ev_down;
         Scenarios_EV_Base(1:len_ev, s) = ev_base;
+        
+        Scenarios_EV_E_Up(1:len_ev, s) = ev_e_up;       % [新增]
+        Scenarios_EV_E_Down(1:len_ev, s) = ev_e_down;   % [新增]
     end
 end
 
@@ -126,6 +145,12 @@ Reliable_AC_Base = mean(Scenarios_AC_Base, 2);
 Reliable_EV_Base = mean(Scenarios_EV_Base, 2); 
 Reliable_AC_Base_95 = quantile(Scenarios_AC_Base, 0.95, 2); 
 Reliable_EV_Base_95 = quantile(Scenarios_EV_Base, 0.95, 2);
+
+% [新增] 提取可靠能量包络 (Reliable Energy Envelope)
+% 由于 E_Up 和 E_Down 都是正值代表"容量大小"，我们使用 alpha (例如0.05) 分位数
+% 含义：在95%的场景下，我们至少拥有这么大的累积调节能量容量
+Reliable_EV_E_Up = quantile(Scenarios_EV_E_Up, alpha, 2);
+Reliable_EV_E_Down = quantile(Scenarios_EV_E_Down, alpha, 2); % 同样取保守下界(容量的最小值)
 
 %% ================= 4.5 代表性场景聚类 (K-means) =================
 fprintf('正在执行 K-means 聚类提取代表性基线场景...\n');
@@ -152,22 +177,18 @@ ac_C_list = cellfun(@(x) x.C, temp_AC_Params);
 
 Reliable_AC_Params.A = mean(ac_A_list);
 Reliable_AC_Params.B = mean(ac_B_list);
-Reliable_AC_Params.C = mean(ac_C_list); % 注意：如果C是向量，mean会按列求均值，符合预期
+Reliable_AC_Params.C = mean(ac_C_list); 
 
 % --- 处理 EV 参数 (时变向量) ---
-% 提取 A, B, C 矩阵，维度: [T_steps x NumScenarios]
-% 注意：run_EV_simulation 返回的 A 是 [288x1]，cell2mat 转置后变成 [Num x T] 再转置回 [T x Num]
-% 或者直接构造矩阵
-all_ev_A = [temp_EV_Params{:}]; % 展开结构体数组
-ev_A_mat = [all_ev_A.A]; % [T x Num]
+all_ev_A = [temp_EV_Params{:}]; 
+ev_A_mat = [all_ev_A.A]; 
 ev_B_mat = [all_ev_A.B]; 
 ev_C_mat = [all_ev_A.C];
 ev_Cap_mat = [all_ev_A.C_total];
 
-% 计算时变均值
-Reliable_EV_Params.A = mean(ev_A_mat, 2); % [T x 1]
-Reliable_EV_Params.B = mean(ev_B_mat, 2); % [T x 1]
-Reliable_EV_Params.C = mean(ev_C_mat, 2); % [T x 1]
+Reliable_EV_Params.A = mean(ev_A_mat, 2); 
+Reliable_EV_Params.B = mean(ev_B_mat, 2); 
+Reliable_EV_Params.C = mean(ev_C_mat, 2); 
 Reliable_EV_Params.C_total = mean(ev_Cap_mat);
 
 fprintf('  > AC 参数: A=%.4f, B=%.4f (Mean)\n', Reliable_AC_Params.A, Reliable_AC_Params.B);
@@ -177,8 +198,9 @@ fprintf('  > EV 参数: (时变向量已计算), C_total=%.2f kWh (Mean)\n', Rel
 save('reliable_regulation_domain_soc.mat', ...
     'Scenarios_AC_Up', 'Scenarios_AC_Down', 'Reliable_AC_Up', 'Reliable_AC_Down', ...
     'Scenarios_EV_Up', 'Scenarios_EV_Down', 'Reliable_EV_Up', 'Reliable_EV_Down', ...
+    'Scenarios_EV_E_Up', 'Scenarios_EV_E_Down', 'Reliable_EV_E_Up', 'Reliable_EV_E_Down', ... % [新增] 保存能量边界
     'Reliable_AC_Base', 'Reliable_EV_Base', 'Reliable_AC_Base_95','Reliable_EV_Base_95',... 
     'Reliable_AC_Base_Clusters', 'Reliable_EV_Base_Clusters', ...
-    'Reliable_AC_Params', 'Reliable_EV_Params', ... % [新增]
+    'Reliable_AC_Params', 'Reliable_EV_Params', ... 
     'time_points', 'alpha', 'num_scenarios');
-fprintf('数据已保存 (包含聚合模型参数)。\n');
+fprintf('数据已保存 (包含聚合模型参数及能量边界)。\n');
