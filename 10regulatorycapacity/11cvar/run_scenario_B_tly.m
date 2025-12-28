@@ -5,6 +5,7 @@ function strategies = run_scenario_B_tly(beta_values, Max_Iter, N_scenarios, N_b
     fprintf('\n>>> 场景 B: 风险偏好灵敏度分析 <<<\n');
     b_run_cost = nan(1, length(beta_values)); 
     b_slack_sum = nan(1, length(beta_values));
+    b_agg_sum = nan(1, length(beta_values)); % [新增] 记录聚合体(AC+EV)总调度量
     b_risk_val = nan(1, length(beta_values));
     strategies = cell(1, length(beta_values));
     T_steps = length(P_grid_demand);
@@ -103,6 +104,7 @@ function strategies = run_scenario_B_tly(beta_values, Max_Iter, N_scenarios, N_b
                 cvar_val = eta_val + (1 / (N_scenarios * (1 - risk_p.confidence))) * sum(z_val);
                 b_run_cost(i) = cost_gen;
                 b_slack_sum(i) = sum(P_Shed_curr + P_Gen_curr) * dt;
+                b_agg_sum(i)   = sum(P_AC_curr + P_EV_curr) * dt; % [新增] 聚合体总能量
                 b_risk_val(i) = cvar_val;
 
                 if iter == Max_Iter
@@ -115,29 +117,45 @@ function strategies = run_scenario_B_tly(beta_values, Max_Iter, N_scenarios, N_b
         end
     end
 
-    % --- 绘图 B ---
+    % --- 绘图 B: 风险灵敏度 (修改版: 加入聚合体调度量) ---
     if any(~isnan(b_slack_sum))
         figure('Name', '场景B_风险灵敏度', 'Color', 'w', 'Position', [100, 100, 900, 400]);
         yyaxis left; 
-        b = bar(1:3, b_slack_sum, 0.5, 'FaceColor', [0.8 0.3 0.3]); 
-        ylabel('切负荷量 + 火电调度量 (MWh)'); 
-        set(gca, 'XTick', 1:3, 'XTickLabel', beta_values);
-        for i = 1:length(b_slack_sum)
-            text(i, b_slack_sum(i), sprintf('%.2f', b_slack_sum(i)), ...
-                'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', ...
-                'FontSize', 12, 'Color', [0.6 0.1 0.1], 'FontWeight', 'bold');
+        
+        % 准备数据：第一列是聚合体(AC+EV)，第二列是备用(Gen+Shed)
+        data_to_plot = [b_agg_sum(:), b_slack_sum(:)];
+        b = bar(1:length(beta_values), data_to_plot, 'grouped');
+        
+        % 设置颜色区分
+        b(1).FaceColor = [0.2 0.6 0.8]; % 蓝色系：聚合体
+        b(2).FaceColor = [0.8 0.3 0.3]; % 红色系：备用资源
+        
+        ylabel('调度能量 (MWh)'); 
+        set(gca, 'XTick', 1:length(beta_values), 'XTickLabel', beta_values);
+        
+        % 为分组柱状图添加数值标签
+        for k = 1:2
+            xt = b(k).XEndPoints;
+            yt = b(k).YEndPoints;
+            for i = 1:length(xt)
+                text(xt(i), yt(i), sprintf('%.2f', yt(i)), ...
+                    'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', ...
+                    'FontSize', 10, 'Color', b(k).FaceColor * 0.8, 'FontWeight', 'bold');
+            end
         end
         
         yyaxis right; 
-        plot(1:3, b_risk_val, 'b-o', 'LineWidth', 2, 'MarkerSize', 8); 
+        plot(1:length(beta_values), b_risk_val, 'k-o', 'LineWidth', 2, 'MarkerSize', 8, 'MarkerFaceColor', 'y'); 
         ylabel('CVaR 潜在违约风险 (MW)'); 
         for i = 1:length(b_risk_val)
             text(i, b_risk_val(i), sprintf('%.2f', b_risk_val(i)), ...
                 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', ...
-                'FontSize', 12, 'Color', 'b', 'FontWeight', 'bold');
+                'FontSize', 12, 'Color', 'k', 'FontWeight', 'bold');
         end
+        
         xlabel('风险厌恶系数 \beta');
-        legend('切负荷 + 火电 (安全性)', '潜在违约风险 (经济性)', 'Location', 'best');
+        % 更新图例
+        legend({'聚合体 (AC+EV)', '备用 (Gen+Shed)', '潜在违约风险 (CVaR)'}, 'Location', 'best');
         grid on;
         print(gcf, '风险偏好灵敏度分析.png', '-dpng', '-r300');
     end
