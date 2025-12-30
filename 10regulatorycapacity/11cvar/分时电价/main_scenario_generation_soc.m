@@ -58,7 +58,8 @@ parfor s = 1:num_scenarios
     [ac_up, ac_down, ac_base, ac_params] = run_AC_simulation_MC_soc(current_seed, temp_ac_file);
     
     % --- EV 仿真 (接收基线、参数以及新增的能量边界) ---
-    [ev_up, ev_down, ev_power_profile, ev_params, ev_e_up, ev_e_down] = run_EV_simulation_MC_soc(current_seed, temp_ev_file);
+    [ev_up, ev_down, ev_power_profile, ev_params, ev_e_up, ev_e_down] ...
+        = run_EV_simulation_MC_soc_bound(current_seed, temp_ev_file);
     
     % 存储结果
     temp_AC_Up{s}   = ac_up;
@@ -195,7 +196,7 @@ fprintf('  > AC 参数: A=%.4f, B=%.4f (Mean)\n', Reliable_AC_Params.A, Reliable
 fprintf('  > EV 参数: (时变向量已计算), C_total=%.2f kWh (Mean)\n', Reliable_EV_Params.C_total);
 
 %% ================= 5. 结果保存 =================
-save('reliable_regulation_domain_soc.mat', ...
+save('reliable_regulation_domain_soc_bound.mat', ...
     'Scenarios_AC_Up', 'Scenarios_AC_Down', 'Reliable_AC_Up', 'Reliable_AC_Down', ...
     'Scenarios_EV_Up', 'Scenarios_EV_Down', 'Reliable_EV_Up', 'Reliable_EV_Down', ...
     'Scenarios_EV_E_Up', 'Scenarios_EV_E_Down', 'Reliable_EV_E_Up', 'Reliable_EV_E_Down', ... % [新增] 保存能量边界

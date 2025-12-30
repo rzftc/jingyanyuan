@@ -13,7 +13,7 @@ clear; close all; clc;
 
 %% ================= 1. 全局初始化与数据清洗 =================
 fprintf('正在加载场景数据...\n');
-data_file = 'reliable_regulation_domain_soc.mat';
+data_file = 'reliable_regulation_domain_soc_bound.mat';
 if ~exist(data_file, 'file')
     error('数据文件缺失！请先运行 main_scenario_generation_diff_mix.m');
 end
@@ -82,7 +82,7 @@ fprintf('正在处理聚合模型参数 (Scale x5, kW->MW)...\n');
 
 % 规模缩放因子
 Scale_AC = 5; 
-Scale_EV = 5;
+Scale_EV = 10;
 
 % 1. 应用缩放到功率数据
 Scenarios_AC_Up = Scale_AC * Scenarios_AC_Up;

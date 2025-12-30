@@ -4,7 +4,7 @@
 clear; close all; clc;
 
 %% 1. 加载数据
-data_file = 'reliable_regulation_domain_soc.mat';
+data_file = 'reliable_regulation_domain_soc_bound.mat';
 
 if ~exist(data_file, 'file')
     error(['数据文件 %s 不存在。\n' ...
@@ -72,12 +72,12 @@ fig_ev = figure('Name', 'EV Reliable Domain', 'Position', [150, 150, 1000, 600],
 hold on;
 
 % 绘制所有场景的背景（半透明）
-plot(time_points, 5*Scenarios_EV_Up(:, 1:plot_limit), 'Color', [0.6, 0.8, 1, 0.15], 'HandleVisibility', 'off');
-plot(time_points, 5*Scenarios_EV_Down(:, 1:plot_limit), 'Color', [1, 0.6, 0.6, 0.15], 'HandleVisibility', 'off');
+plot(time_points, 10*Scenarios_EV_Up(:, 1:plot_limit), 'Color', [0.6, 0.8, 1, 0.15], 'HandleVisibility', 'off');
+plot(time_points, 10*Scenarios_EV_Down(:, 1:plot_limit), 'Color', [1, 0.6, 0.6, 0.15], 'HandleVisibility', 'off');
 
 % 绘制可靠边界
-p3 = plot(time_points, 5*Reliable_EV_Up, 'b-', 'LineWidth', 2.5, 'DisplayName', '可靠上调边界');
-p4 = plot(time_points, 5*Reliable_EV_Down, 'r-', 'LineWidth', 2.5, 'DisplayName', '可靠下调边界');
+p3 = plot(time_points, 10*Reliable_EV_Up, 'b-', 'LineWidth', 2.5, 'DisplayName', '可靠上调边界');
+p4 = plot(time_points, 10*Reliable_EV_Down, 'r-', 'LineWidth', 2.5, 'DisplayName', '可靠下调边界');
 
 % 辅助线与装饰
 yline(0, 'k--', 'LineWidth', 1.2); 
