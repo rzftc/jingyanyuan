@@ -7,12 +7,13 @@
 % 3. 聚合参数处理：保留 AC 灰盒参数，**移除 EV 灰盒参数处理** (不再使用期望SOC约束)。
 % 4. 自动对齐：增加数据长度自动截断逻辑，防止索引越界。
 % 5. [新增] 引入累积能量约束 (Reliable_EV_E_Up/Down) 并传递给优化模型。
+% 6. [新增] 引入分时变化调度成本 (Time-Varying Cost)，体现火电/EV/AC在不同时段的经济性差异。
 
 clear; close all; clc;
 
 %% ================= 1. 全局初始化与数据清洗 =================
 fprintf('正在加载场景数据...\n');
-data_file = 'reliable_regulation_domain_soc.mat';
+data_file = 'reliable_regulation_domain_soc_2bound.mat';
 if ~exist(data_file, 'file')
     error('数据文件缺失！请先运行 main_scenario_generation_diff_mix.m');
 end
@@ -81,7 +82,7 @@ fprintf('正在处理聚合模型参数 (Scale x5, kW->MW)...\n');
 
 % 规模缩放因子
 Scale_AC = 5; 
-Scale_EV = 5;
+Scale_EV = 10;
 
 % 1. 应用缩放到功率数据
 Scenarios_AC_Up = Scale_AC * Scenarios_AC_Up;
@@ -143,11 +144,39 @@ Physical_EV_Up  = max(Scenarios_EV_Up, [], 2);
 Physical_AC_Down  = max(abs(Scenarios_AC_Down), [], 2);
 Physical_EV_Down  = max(abs(Scenarios_EV_Down), [], 2);
 
-% --- 成本参数 ---
-cost_params.c1_ac = 400;      cost_params.c2_ac = 10;     
-cost_params.c1_ev = 500;      cost_params.c2_ev = 10;       
-cost_params.c1_gen = 800;    cost_params.c2_gen = 80; 
-cost_params.c1_shed = 2e5;    cost_params.c2_shed = 0; 
+% --- [关键修改] 成本参数 (分时变化) ---
+% 1. 生成小时向量 (处理跨天逻辑: 8..23..0..8)
+Hour_Vector = mod(t_axis, 24)'; 
+
+% 2. 火电 (Gen): 模拟电力市场，早晚高峰高，深夜谷值低
+C1_Gen_Vec = 800 * ones(T_steps, 1); % 基准
+idx_gen_peak   = (Hour_Vector >= 10 & Hour_Vector < 12) | ...
+                 (Hour_Vector >= 18 & Hour_Vector < 21);
+idx_gen_valley = (Hour_Vector >= 23) | (Hour_Vector < 5); % 覆盖跨天午夜
+C1_Gen_Vec(idx_gen_peak)   = 1000;
+C1_Gen_Vec(idx_gen_valley) = 600;
+
+% 3. 电动汽车 (EV): 模拟用户紧迫度，下班返家高，深夜充电低
+C1_EV_Vec = 500 * ones(T_steps, 1); % 基准
+idx_ev_urgent = (Hour_Vector >= 17 & Hour_Vector < 21);
+idx_ev_low    = (Hour_Vector >= 23) | (Hour_Vector < 7); % 覆盖跨天睡眠期
+C1_EV_Vec(idx_ev_urgent) = 800;
+C1_EV_Vec(idx_ev_low)    = 300;
+
+% 4. 空调 (AC): 模拟舒适度敏感性，午后高温高，夜间低
+C1_AC_Vec = 400 * ones(T_steps, 1); % 基准
+idx_ac_hot  = (Hour_Vector >= 13 & Hour_Vector < 16);
+idx_ac_cool = (Hour_Vector >= 22) | (Hour_Vector < 8); % 覆盖跨天
+C1_AC_Vec(idx_ac_hot)  = 600;
+C1_AC_Vec(idx_ac_cool) = 300;
+
+% 5. 赋值参数
+cost_params.c1_ac = C1_AC_Vec;      cost_params.c2_ac = 10;     
+cost_params.c1_ev = C1_EV_Vec;      cost_params.c2_ev = 10;       
+cost_params.c1_gen = C1_Gen_Vec;    cost_params.c2_gen = 80; 
+cost_params.c1_shed = 2e5;          cost_params.c2_shed = 0; 
+
+fprintf('>>> 成本参数已更新为分时变化模式 (Time-Varying Costs) <<<\n');
 
 % --- 优化权重 ---
 lambda_SDCI = 10;   
@@ -400,7 +429,7 @@ run_scenario_E_tly(P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
 
 fprintf('\n所有测试结束。\n');
 %% 5. 运行场景 F: 协同约束效益对比验证
-beta_for_comparison = 47; 
+beta_for_comparison = 46; 
 
 run_scenario_F_comparison(beta_for_comparison, 2, N_scenarios, N_bus, N_line, dt, ...
     P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
@@ -411,7 +440,8 @@ beta_for_G = 100;
 
 run_scenario_G_comparison(beta_for_G, Max_Iter, N_scenarios, N_bus, N_line, dt, ...
     P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
-    Effective_Reliable_AC, Effective_Reliable_EV, ... % 传入可靠边界作为确定性优化的依据
+    Reliable_AC_Up, Reliable_EV_Up, ...
+    Reliable_AC_Down, Reliable_EV_Down, ... % <--- 补充这两个参数
     R_Gen_Max, R_Shed_Max, cost_params, net_params, direction_signal, options);
 %% --- 辅助函数：模拟钟形曲线 ---
 function y = beta_pdf_proxy(x, a, b)

@@ -1,4 +1,3 @@
-%% --- 辅助函数：确定性调度求解器 ---
 function st = solve_deterministic_dispatch(P_grid_demand, direction_signal, ...
     Reliable_AC_Up, Reliable_EV_Up, Reliable_AC_Down, Reliable_EV_Down, ...
     R_Gen_Max, R_Shed_Max, cost_params, dt, options, T_steps)
@@ -16,26 +15,33 @@ function st = solve_deterministic_dispatch(P_grid_demand, direction_signal, ...
     idx_shed = (3*T_steps+1):4*T_steps;
     
     for t = 1:T_steps
+        % --- [核心修改] 处理分时电价向量索引 ---
         % AC
         i = idx_ac(t);
         H(i,i) = 2 * cost_params.c2_ac * dt;
-        f(i) = cost_params.c1_ac * dt;
+        % 兼容向量(分时)或标量(固定)
+        if length(cost_params.c1_ac) > 1, c1_val = cost_params.c1_ac(t); else, c1_val = cost_params.c1_ac; end
+        f(i) = c1_val * dt;
+        
         % EV
         i = idx_ev(t);
         H(i,i) = 2 * cost_params.c2_ev * dt;
-        f(i) = cost_params.c1_ev * dt;
+        if length(cost_params.c1_ev) > 1, c1_val = cost_params.c1_ev(t); else, c1_val = cost_params.c1_ev; end
+        f(i) = c1_val * dt;
+        
         % Gen
         i = idx_gen(t);
         H(i,i) = 2 * cost_params.c2_gen * dt;
-        f(i) = cost_params.c1_gen * dt;
-        % Shed
+        if length(cost_params.c1_gen) > 1, c1_val = cost_params.c1_gen(t); else, c1_val = cost_params.c1_gen; end
+        f(i) = c1_val * dt;
+        
+        % Shed (通常是标量)
         i = idx_shed(t);
-        H(i,i) = 2 * cost_params.c2_shed * dt; % usually 0
-        f(i) = cost_params.c1_shed * dt;
+        H(i,i) = 2 * cost_params.c2_shed * dt; 
+        f(i) = cost_params.c1_shed * dt; 
     end
     
     % 构造等式约束 (功率平衡)
-    % P_AC + P_EV + P_Gen + P_Shed = P_Demand
     Aeq = sparse(T_steps, n_vars);
     beq = P_grid_demand;
     
@@ -51,10 +57,10 @@ function st = solve_deterministic_dispatch(P_grid_demand, direction_signal, ...
     ub = zeros(n_vars, 1);
     
     for t = 1:T_steps
-        if direction_signal(t) == 1 % Up
+        if direction_signal(t) == 1 % Up Regulation
             ub(idx_ac(t)) = Reliable_AC_Up(t);
             ub(idx_ev(t)) = Reliable_EV_Up(t);
-        else % Down
+        else % Down Regulation
             ub(idx_ac(t)) = abs(Reliable_AC_Down(t));
             ub(idx_ev(t)) = abs(Reliable_EV_Down(t));
         end
