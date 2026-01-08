@@ -17,7 +17,6 @@ num_ev_total = size(P_ev_up_individual, 1);
 T = size(P_ac_up_individual, 2); % 假设所有个体数据的时间维度一致
 
 % 定义/加载电网调节需求
-% 如果 results_single.mat 中没有提供，则生成示例需求
 if isfield(results, 'P_grid_up_regulation_demand') && ~isempty(results.P_grid_up_regulation_demand) && length(results.P_grid_up_regulation_demand) == T
     P_grid_up_demand = results.P_grid_up_regulation_demand(:);
 else
@@ -25,10 +24,9 @@ else
     if T > 0
         avg_raw_total_up_power_per_step = (sum(sum(P_ac_up_individual,1)) + sum(sum(P_ev_up_individual,1))) / T;
     end
-    if isnan(avg_raw_total_up_power_per_step) || avg_raw_total_up_power_per_step == 0; avg_raw_total_up_power_per_step = 100; end % 默认基础值
+    if isnan(avg_raw_total_up_power_per_step) || avg_raw_total_up_power_per_step == 0; avg_raw_total_up_power_per_step = 100; end 
     demand_factor_up_low = 0.2; demand_factor_up_high = 0.5;
     P_grid_up_demand = avg_raw_total_up_power_per_step * (demand_factor_up_low + (demand_factor_up_high-demand_factor_up_low) * rand(T,1));
-    % results.P_grid_up_regulation_demand = P_grid_up_demand; % 可选：如果希望在当前工作区更新results结构
 end
 
 if isfield(results, 'P_grid_down_regulation_demand') && ~isempty(results.P_grid_down_regulation_demand) && length(results.P_grid_down_regulation_demand) == T
@@ -38,10 +36,9 @@ else
     if T > 0
         avg_raw_total_down_power_per_step = (sum(sum(P_ac_down_individual,1)) + sum(sum(P_ev_down_individual,1))) / T;
     end
-    if isnan(avg_raw_total_down_power_per_step) || avg_raw_total_down_power_per_step == 0; avg_raw_total_down_power_per_step = 80; end % 默认基础值
+    if isnan(avg_raw_total_down_power_per_step) || avg_raw_total_down_power_per_step == 0; avg_raw_total_down_power_per_step = 80; end 
     demand_factor_down_low = 0.15; demand_factor_down_high = 0.4;
     P_grid_down_demand = avg_raw_total_down_power_per_step * (demand_factor_down_low + (demand_factor_down_high-demand_factor_down_low) * sin(linspace(0,2*pi,T)'*0.5 + pi/4).^2 );
-    % results.P_grid_down_regulation_demand = P_grid_down_demand; % 可选
 end
 
 eps_val = 1e-6;
@@ -110,32 +107,30 @@ end
 %% 4. 设置遗传算法参数
 pop_size_calc = max(20, (num_ac_total + num_ev_total));
 gen_calc = max(10, T);
-N_vars_for_ga_opts = (num_ac_total + num_ev_total) * T; % 用于确定合理的种群大小和代数
+N_vars_for_ga_opts = (num_ac_total + num_ev_total) * T; 
 
 ga_opts = optimoptions('ga', ...
     'PopulationType', 'bitstring', ...
-    'PopulationSize', min(200, max(50, round(N_vars_for_ga_opts / 1000 * 50))), ... % 调整与变量数的比例
-    'MaxGenerations', min(500, max(100, round(N_vars_for_ga_opts / 1000 * 100))),... % 调整与变量数的比例
+    'PopulationSize', min(50, max(50, round(N_vars_for_ga_opts / 1000 * 50))), ... 
+    'MaxGenerations', min(100, max(100, round(N_vars_for_ga_opts / 1000 * 100))),... 
     'EliteCount', ceil(0.05 * min(200, max(50, round(N_vars_for_ga_opts / 1000 * 50)))), ...
     'CrossoverFraction', 0.8, ...
     'MutationFcn', {@mutationuniform, 0.01}, ...
-    'Display', 'iter', ... % 减少迭代过程输出
+    'Display', 'iter', ... 
     'UseParallel', true,...
     'PlotFcn', @gaplotbestf); 
-% 如果 N_vars_for_ga_opts 为0 (例如T=0或无设备)，则上述计算种群大小等可能需要进一步保护，但调用GA前会检查
 
 %% 5. 执行优化
 % --- 上调优化 ---
 U_ac_up_optimal = zeros(num_ac_total, T); 
 U_ev_up_optimal = zeros(num_ev_total, T);
 cost_up_optimal = 0; 
-% exitflag_up = -1; % 如果不使用exitflag，可以不初始化
 
 if (num_ac_total > 0 && ~isempty(P_ac_up_individual)) || (num_ev_total > 0 && ~isempty(P_ev_up_individual))
     C_ac_up_eff = C_ac_up; if num_ac_total == 0; C_ac_up_eff = []; end
     C_ev_up_eff = C_ev_up; if num_ev_total == 0; C_ev_up_eff = []; end
     
-    [U_ac_up_optimal, U_ev_up_optimal, cost_up_optimal, ~, ~] = ... % 忽略 exitflag, output, population, scores
+    [U_ac_up_optimal, U_ev_up_optimal, cost_up_optimal, ~, ~] = ... 
         solve_total_time_dispatch_ga(num_ac_total, num_ev_total, ...
                                      P_ac_up_individual, P_ev_up_individual, ...
                                      C_ac_up_eff, C_ev_up_eff, P_grid_up_demand, T, ...
@@ -146,7 +141,6 @@ end
 U_ac_down_optimal = zeros(num_ac_total, T);
 U_ev_down_optimal = zeros(num_ev_total, T);
 cost_down_optimal = 0;
-% exitflag_down = -1;
 
 if (num_ac_total > 0 && ~isempty(P_ac_down_individual)) || (num_ev_total > 0 && ~isempty(P_ev_down_individual))
     C_ac_down_eff = C_ac_down; if num_ac_total == 0; C_ac_down_eff = []; end
@@ -216,70 +210,104 @@ else
     rho_down_opt = calculateSpearmanRho(n_ac_opt_down_t, avg_P_ac_opt_down_t, n_ev_opt_down_t, avg_P_ev_opt_down_t);
 end
 
-%% 7. 结果可视化
+%% 7. 结果可视化 (分开存储为4个高清中文图)
 time_axis = (1:T)'; 
+font_name = 'Microsoft YaHei'; % 设置支持中文的字体
+font_size_axis = 16;
+font_size_label = 18;
+font_size_legend = 16;
+line_width = 2.0;
 
-figure('Position', [100, 100, 1200, 800]);
-sgtitle('VPP Dispatch Optimization Results (GA with SDCI/Rho Constraints)', 'FontSize', 16);
-
-subplot(2,2,1);
-plot(time_axis, Total_Up_Aggregated_Raw, 'b--', 'LineWidth', 1.5, 'DisplayName', 'Raw Aggregated Up-Power'); hold on;
-plot(time_axis, Total_Up_Optimal_Agg, 'r-', 'LineWidth', 1.5, 'DisplayName', 'Optimized Up-Power (GA)');
-plot(time_axis, P_grid_up_demand, 'k:', 'LineWidth', 1, 'DisplayName', 'Up-Regulation Demand');
+% --- 图1：上调功率对比 ---
+figure('Position', [100, 100, 1000, 700], 'Color', 'w');
+plot(time_axis, Total_Up_Aggregated_Raw, 'b--', 'LineWidth', line_width, 'DisplayName', '原始聚合上调功率'); hold on;
+plot(time_axis, Total_Up_Optimal_Agg, 'r-', 'LineWidth', line_width, 'DisplayName', '优化后上调功率');
+plot(time_axis, P_grid_up_demand, 'k:', 'LineWidth', line_width, 'DisplayName', '上调需求');
 hold off;
-title('Up-Regulation Power Comparison'); xlabel('Time Step'); ylabel('Power (kW)');
-legend('show', 'Location', 'best'); grid on;
+% 无标题
+xlabel('时间步', 'FontSize', font_size_label, 'FontName', font_name); 
+ylabel('功率 (kW)', 'FontSize', font_size_label, 'FontName', font_name);
+legend('show', 'Location', 'best', 'FontSize', font_size_legend, 'FontName', font_name); 
+grid on;
+set(gca, 'FontSize', font_size_axis, 'FontName', font_name);
+print('上调功率对比.png', '-dpng', '-r600');
+fprintf('已保存: 上调功率对比.png\n');
 
-subplot(2,2,2);
-plot(time_axis, Total_Down_Aggregated_Raw, 'b--', 'LineWidth', 1.5, 'DisplayName', 'Raw Aggregated Down-Power'); hold on;
-plot(time_axis, Total_Down_Optimal_Agg, 'r-', 'LineWidth', 1.5, 'DisplayName', 'Optimized Down-Power (GA)');
-plot(time_axis, P_grid_down_demand, 'k:', 'LineWidth', 1, 'DisplayName', 'Down-Regulation Demand');
+% --- 图2：下调功率对比 ---
+figure('Position', [150, 150, 1000, 700], 'Color', 'w');
+plot(time_axis, Total_Down_Aggregated_Raw, 'b--', 'LineWidth', line_width, 'DisplayName', '原始聚合下调功率'); hold on;
+plot(time_axis, Total_Down_Optimal_Agg, 'r-', 'LineWidth', line_width, 'DisplayName', '优化后下调功率');
+plot(time_axis, P_grid_down_demand, 'k:', 'LineWidth', line_width, 'DisplayName', '下调需求');
 hold off;
-title('Down-Regulation Power Comparison'); xlabel('Time Step'); ylabel('Power (kW)');
-legend('show', 'Location', 'best'); grid on;
+% 无标题
+xlabel('时间步', 'FontSize', font_size_label, 'FontName', font_name); 
+ylabel('功率 (kW)', 'FontSize', font_size_label, 'FontName', font_name);
+legend('show', 'Location', 'best', 'FontSize', font_size_legend, 'FontName', font_name); 
+grid on;
+set(gca, 'FontSize', font_size_axis, 'FontName', font_name);
+print('下调功率对比.png', '-dpng', '-r600');
+fprintf('已保存: 下调功率对比.png\n');
 
-subplot(2,2,3);
+% --- 图3：上调互补性与相关性 ---
+figure('Position', [200, 200, 1000, 700], 'Color', 'w');
 indicator_names_up = {'SDCI⁺', 'Spearman ρ⁺'};
 values_raw_up = [SDCI_up_raw; rho_up_raw];
 values_opt_up = [SDCI_up_opt; rho_up_opt];
 bar_data_up = [values_raw_up, values_opt_up];
+
 b_up = bar(bar_data_up);
-set(gca, 'XTickLabel', indicator_names_up);
-ylabel('Indicator Value'); ylim([-1.1, 1.1]); 
-legend([b_up(1) b_up(2)], {'Raw Aggregated', 'Optimized (GA)'}, 'Location', 'northoutside', 'Orientation','horizontal');
-title('Up-Regulation Complementarity & Correlation'); grid on;
+set(gca, 'XTickLabel', indicator_names_up, 'FontSize', font_size_axis, 'FontName', font_name);
+ylabel('指标值', 'FontSize', font_size_label, 'FontName', font_name); 
+ylim([-1.2, 1.2]); 
+legend([b_up(1) b_up(2)], {'原始聚合', '优化后'}, 'Location', 'northoutside', 'Orientation','horizontal', 'FontSize', font_size_legend, 'FontName', font_name);
+% 无标题
+grid on;
+
+% 添加数值标签
 for k_bar = 1:size(bar_data_up,1) 
     for j_bar = 1:size(bar_data_up,2)
         text(b_up(j_bar).XData(k_bar) + b_up(j_bar).XOffset, bar_data_up(k_bar,j_bar), sprintf('%.3f', bar_data_up(k_bar,j_bar)), ...
-            'HorizontalAlignment','center', 'VerticalAlignment','bottom', 'FontSize',8, 'Color','k');
+            'HorizontalAlignment','center', 'VerticalAlignment','bottom', 'FontSize', 12, 'FontName', font_name, 'Color','k');
     end
 end
+set(gca, 'FontSize', font_size_axis, 'FontName', font_name);
+print('上调互补性与相关性.png', '-dpng', '-r600');
+fprintf('已保存: 上调互补性与相关性.png\n');
 
-subplot(2,2,4);
+% --- 图4：下调互补性与相关性 ---
+figure('Position', [250, 250, 1000, 700], 'Color', 'w');
 indicator_names_down = {'SDCI⁻', 'Spearman ρ⁻'};
 values_raw_down = [SDCI_down_raw; rho_down_raw];
 values_opt_down = [SDCI_down_opt; rho_down_opt];
 bar_data_down = [values_raw_down, values_opt_down];
+
 b_down = bar(bar_data_down);
-set(gca, 'XTickLabel', indicator_names_down);
-ylabel('Indicator Value'); ylim([-1.1, 1.1]);
-legend([b_down(1) b_down(2)], {'Raw Aggregated', 'Optimized (GA)'}, 'Location', 'northoutside', 'Orientation','horizontal');
-title('Down-Regulation Complementarity & Correlation'); grid on;
+set(gca, 'XTickLabel', indicator_names_down, 'FontSize', font_size_axis, 'FontName', font_name);
+ylabel('指标值', 'FontSize', font_size_label, 'FontName', font_name); 
+ylim([-1.2, 1.2]);
+legend([b_down(1) b_down(2)], {'原始聚合', '优化后'}, 'Location', 'northoutside', 'Orientation','horizontal', 'FontSize', font_size_legend, 'FontName', font_name);
+% 无标题
+grid on;
+
+% 添加数值标签
 for k_bar = 1:size(bar_data_down,1)
     for j_bar = 1:size(bar_data_down,2)
         text(b_down(j_bar).XData(k_bar) + b_down(j_bar).XOffset, bar_data_down(k_bar,j_bar), sprintf('%.3f', bar_data_down(k_bar,j_bar)), ...
-            'HorizontalAlignment','center', 'VerticalAlignment','bottom', 'FontSize',8, 'Color','k');
+            'HorizontalAlignment','center', 'VerticalAlignment','bottom', 'FontSize', 12, 'FontName', font_name, 'Color','k');
     end
 end
+set(gca, 'FontSize', font_size_axis, 'FontName', font_name);
+print('下调互补性与相关性.png', '-dpng', '-r600');
+fprintf('已保存: 下调互补性与相关性.png\n');
 
 %% 8. 命令行输出汇总
 disp(' ');
-disp('=== 互补性与相关性指标对比 (GA Optimization) ===');
+disp('=== 互补性与相关性指标对比 (GA 优化结果) ===');
 disp('【上调】');
-fprintf('优化前 (Raw Aggregated): SDCI⁺ = %.4f, ρ⁺ = %.4f\n', SDCI_up_raw, rho_up_raw);
-fprintf('优化后 (GA Optimized):  SDCI⁺ = %.4f, ρ⁺ = %.4f, 优化成本 = %.2f\n', SDCI_up_opt, rho_up_opt, cost_up_optimal);
+fprintf('优化前 (原始聚合): SDCI⁺ = %.4f, ρ⁺ = %.4f\n', SDCI_up_raw, rho_up_raw);
+fprintf('优化后 (GA 优化):  SDCI⁺ = %.4f, ρ⁺ = %.4f, 优化成本 = %.2f\n', SDCI_up_opt, rho_up_opt, cost_up_optimal);
 disp(' ');
 disp('【下调】');
-fprintf('优化前 (Raw Aggregated): SDCI⁻ = %.4f, ρ⁻ = %.4f\n', SDCI_down_raw, rho_down_raw);
-fprintf('优化后 (GA Optimized):  SDCI⁻ = %.4f, ρ⁻ = %.4f, 优化成本 = %.2f\n', SDCI_down_opt, rho_down_opt, cost_down_optimal);
+fprintf('优化前 (原始聚合): SDCI⁻ = %.4f, ρ⁻ = %.4f\n', SDCI_down_raw, rho_down_raw);
+fprintf('优化后 (GA 优化):  SDCI⁻ = %.4f, ρ⁻ = %.4f, 优化成本 = %.2f\n', SDCI_down_opt, rho_down_opt, cost_down_optimal);
 disp(' ');
