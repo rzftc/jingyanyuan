@@ -278,7 +278,7 @@ if has_single_result
             % 设置坐标轴范围
             xlim([t_start_zoom, t_end_zoom]);
             ylim([y_rect_min, y_rect_max]);
-            grid on;
+            grid off; % <--- [修改] 移除子图网格线，保留坐标轴
             set(gca, 'FontSize', 22);
             
             % 去掉标题、XY轴标签、图例
