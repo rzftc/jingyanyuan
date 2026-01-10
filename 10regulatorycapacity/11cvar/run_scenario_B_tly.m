@@ -31,7 +31,8 @@ function strategies = run_scenario_B_tly(beta_values, Max_Iter, N_scenarios, N_b
                 R_Gen_Max, R_Shed_Max, ...
                 cost_params, risk_p, net_params_safe);
             
-            start_row_net = 2 * N_scenarios; 
+            % start_row_net = 2 * N_scenarios; 
+            start_row_net = (T_steps + 1) * N_scenarios;
             % 位于 run_scenario_B.m 的循环内
             for t = 1:T_steps
                 if direction_signal(t) == 1

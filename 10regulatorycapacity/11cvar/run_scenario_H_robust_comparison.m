@@ -31,7 +31,8 @@ function run_scenario_H_robust_comparison(beta_val, N_scenarios, N_bus, N_line, 
         R_Gen_Max, R_Shed_Max, cost_params, rob_risk_p, net_params);
     
     % 1.4 处理方向信号 (与主流程一致)
-    start_row_net = 2 * N_scenarios;
+    % start_row_net = 2 * N_scenarios;
+    start_row_net = (T_steps + 1) * N_scenarios;
     for t = 1:T_steps
         if direction_signal(t) == 1
             rows_t = start_row_net + (t-1)*2*N_line + (1 : 2*N_line);

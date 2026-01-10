@@ -3,6 +3,7 @@ function [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fa
 % construct_risk_constrained_qp_fast_ramp_tly 
 % 修改：仅保留 AC 灰盒约束，移除 EV 状态约束。
 % [新增] 增加 EV 累积能量约束
+% [修正] 爬坡约束逻辑：仅在同向调节时施加约束，允许方向切换时的快速跳变 (方案A)
 
     [T, N_scenarios] = size(S_AC);
     N_line = size(net_p.PTDF, 1);
@@ -153,7 +154,7 @@ function [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fa
         end
     end
 
-    % 爬坡约束
+    % --- [关键修改] 爬坡约束 (仅同向约束) ---
     A_ramp = sparse(0, num_vars); b_ramp = zeros(0, 1);
     if T > 1
         if isfield(risk_p, 'ramp_ac') && ~isempty(risk_p.ramp_ac), ramp_ac = risk_p.ramp_ac(:); else, ramp_ac = 999 * ones(T-1, 1); end
@@ -165,14 +166,22 @@ function [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fa
         b_ramp = zeros(max_ramp_con, 1);
         k = 0;
         for t = 2:T
-             tt = t-1;
-             k=k+1; A_ramp(k, idx_P_AC(t))=1; A_ramp(k, idx_P_AC(t-1))=-1; b_ramp(k)=ramp_ac(min(tt,end));
-             k=k+1; A_ramp(k, idx_P_AC(t))=-1; A_ramp(k, idx_P_AC(t-1))=1; b_ramp(k)=ramp_ac(min(tt,end));
-             k=k+1; A_ramp(k, idx_P_EV(t))=1; A_ramp(k, idx_P_EV(t-1))=-1; b_ramp(k)=ramp_ev(min(tt,end));
-             k=k+1; A_ramp(k, idx_P_EV(t))=-1; A_ramp(k, idx_P_EV(t-1))=1; b_ramp(k)=ramp_ev(min(tt,end));
-             k=k+1; A_ramp(k, idx_P_Gen(t))=1; A_ramp(k, idx_P_Gen(t-1))=-1; b_ramp(k)=ramp_gen(min(tt,end));
-             k=k+1; A_ramp(k, idx_P_Gen(t))=-1; A_ramp(k, idx_P_Gen(t-1))=1; b_ramp(k)=ramp_gen(min(tt,end));
+             % [修改点] 仅当 t 与 t-1 方向一致时，施加爬坡约束
+             % 若方向不一致(dir_sig 跳变)，则视为过零点，不施加差分约束
+             if dir_sig(t) == dir_sig(t-1)
+                 tt = t-1;
+                 % AC
+                 k=k+1; A_ramp(k, idx_P_AC(t))=1; A_ramp(k, idx_P_AC(t-1))=-1; b_ramp(k)=ramp_ac(min(tt,end));
+                 k=k+1; A_ramp(k, idx_P_AC(t))=-1; A_ramp(k, idx_P_AC(t-1))=1; b_ramp(k)=ramp_ac(min(tt,end));
+                 % EV
+                 k=k+1; A_ramp(k, idx_P_EV(t))=1; A_ramp(k, idx_P_EV(t-1))=-1; b_ramp(k)=ramp_ev(min(tt,end));
+                 k=k+1; A_ramp(k, idx_P_EV(t))=-1; A_ramp(k, idx_P_EV(t-1))=1; b_ramp(k)=ramp_ev(min(tt,end));
+                 % Gen
+                 k=k+1; A_ramp(k, idx_P_Gen(t))=1; A_ramp(k, idx_P_Gen(t-1))=-1; b_ramp(k)=ramp_gen(min(tt,end));
+                 k=k+1; A_ramp(k, idx_P_Gen(t))=-1; A_ramp(k, idx_P_Gen(t-1))=1; b_ramp(k)=ramp_gen(min(tt,end));
+             end
         end
+        % 截断未使用的预分配行
         A_ramp = A_ramp(1:k, :); b_ramp = b_ramp(1:k);
     end
 

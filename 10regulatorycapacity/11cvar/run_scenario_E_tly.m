@@ -26,7 +26,8 @@ function run_scenario_E_tly(P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
                 Physical_AC_Up, Physical_EV_Up, R_Gen_Max, R_Shed_Max, ...
                 cost_params, risk_E, net_params_safe);
                 
-        start_row_net = 2 * N_scenarios; 
+        % start_row_net = 2 * N_scenarios; 
+        start_row_net = (T_steps + 1) * N_scenarios;
         % 位于 run_scenario_B.m 的循环内
         for t = 1:T_steps
             if direction_signal(t) == 1
