@@ -172,7 +172,6 @@ for k = 1:length(user_commands)
     
     P_grid_command_series(start_idx:end_idx) = user_commands(k);
 end
-fprintf('    指令序列已更新: [0, 100, 0, -110, 100, -90] kW\n');
 % =========================================================================
 
 

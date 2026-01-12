@@ -4,12 +4,14 @@
 % 2. 计算不同激励电价下 AC 和 EV 集群的互补性 (SDCI) 和相关性 (Rho)。
 % 3. 绘制共 8 张分析图表 (4张时长对比 + 4张电价趋势)。
 %    [修改] 保存为高DPI PNG，无标题，中文文件名和图例。
-%    [修改] 统一时间轴：将 AC 数据 (0:24) 转化为 (6:30)，与 EV 数据对齐。
+%    [修改] 统一时间轴：将 AC 数据 (0:24) 转化为 (8:00 至次日 8:00)，与 EV 数据对齐。
+%    [修改] 放大图片字体大小。
 
 clear; close all; clc;
 
 % 设置默认字体和绘图参数 (推荐使用支持中文的字体)
-set(0, 'DefaultAxesFontSize', 12);
+% [修改] 放大默认坐标轴字体大小
+set(0, 'DefaultAxesFontSize', 15);
 set(0, 'DefaultLineLineWidth', 1.5);
 set(0, 'DefaultAxesFontName', 'Microsoft YaHei'); 
 set(0, 'DefaultTextFontName', 'Microsoft YaHei');
@@ -23,16 +25,20 @@ fprintf('==========================================================\n');
 
 % 1. 定义文件名和参数 (标签改为中文)
 dt_labels = {'5分钟', '15分钟', '60分钟'};
-ev_files_dt = {'main_potential_5min.mat', 'main_potential_15min.mat', 'main_potential_60min.mat'};
-ac_files_dt = {'AC_Stateful_Simulation_Results_5min.mat', 'AC_Stateful_Simulation_Results_15min.mat', 'AC_Stateful_Simulation_Results_60min.mat'};
+ev_files_dt = {'main_potential_5min_1000_8am_bound.mat', ...
+    'main_potential_15min_1000_8am_bound.mat', ...
+    'main_potential_60min_1000_8am_bound.mat'};
+ac_files_dt = {'AC_Stateful_Simulation_Results_5min_pi.mat', ...
+    'AC_Stateful_Simulation_Results_15min_pi.mat', ...
+    'AC_Stateful_Simulation_Results_60min_pi.mat'};
 
 num_dt = length(dt_labels);
 
 % 2. 初始化结果存储数组
-res_dt_sdci_up   = zeros(1, num_dt);
-res_dt_rho_up    = zeros(1, num_dt);
+res_dt_sdci_up    = zeros(1, num_dt);
+res_dt_rho_up     = zeros(1, num_dt);
 res_dt_sdci_down = zeros(1, num_dt);
-res_dt_rho_down  = zeros(1, num_dt);
+res_dt_rho_down   = zeros(1, num_dt);
 
 % 3. 循环处理每个 dt
 for i = 1:num_dt
@@ -45,22 +51,22 @@ for i = 1:num_dt
         
         % ==================== [修改] 时间轴对齐逻辑 ====================
         % AC 原数据: 00:00 -> 24:00 (24h)
-        % EV 原数据: 06:00 -> 30:00 (24h)
-        % 操作: 将 AC 数据移位，使其变为 06:00 -> 30:00
-        % 方法: 新 AC = [原AC(06:00-24:00); 原AC(00:00-06:00)]
+        % EV 原数据: 08:00 -> 32:00 (24h+)
+        % 操作: 将 AC 数据移位，使其变为 08:00 -> 08:00 (次日)
+        % 方法: 新 AC = [原AC(08:00-24:00); 原AC(00:00-08:00)]
         
         len_ac = length(ac_up);
-        % 计算对应 6 小时的数据点数 (假设 len_ac 对应 24 小时)
-        idx_6h = round(len_ac * (6/24));
+        % [修改] 计算对应 8 小时的数据点数 (假设 len_ac 对应 24 小时)
+        idx_8h = round(len_ac * (8/24));
         
-        if idx_6h > 0 && idx_6h < len_ac
+        if idx_8h > 0 && idx_8h < len_ac
             % 拼接数据
-            ac_up_shifted = [ac_up(idx_6h+1:end); ac_up(1:idx_6h)];
-            ac_down_shifted = [ac_down(idx_6h+1:end); ac_down(1:idx_6h)];
+            ac_up_shifted = [ac_up(idx_8h+1:end); ac_up(1:idx_8h)];
+            ac_down_shifted = [ac_down(idx_8h+1:end); ac_down(1:idx_8h)];
             
             ac_up = ac_up_shifted;
             ac_down = ac_down_shifted;
-            fprintf('  已执行时间轴对齐：AC 数据从 0:24 调整为 6:30 (循环移位 %d 点)\n', idx_6h);
+            fprintf('  已执行时间轴对齐：AC 数据从 0:24 调整为 8:00 至次日 8:00 (循环移位 %d 点)\n', idx_8h);
         else
             warning('  AC 数据长度异常，跳过时间轴对齐。');
         end
@@ -107,8 +113,8 @@ price_list = linspace(0, 50, 10);
 num_prices = length(price_list);
 
 % 2. 初始化结果存储数组
-res_price_sdci_up   = nan(1, num_prices);
-res_price_rho_up    = nan(1, num_prices);
+res_price_sdci_up    = nan(1, num_prices);
+res_price_rho_up     = nan(1, num_prices);
 res_price_sdci_down = nan(1, num_prices);
 res_price_rho_down  = nan(1, num_prices);
 
@@ -117,10 +123,10 @@ for k = 1:num_prices
     current_p = price_list(k);
     
     % 构造文件名
-    ac_file_p = sprintf('AC_Stateful_Simulation_Results_Price_%.1f.mat', current_p);
+    ac_file_p = sprintf('AC_Stateful_Simulation_Results_Price_%.1f_pi.mat', current_p);
     
     % EV 文件名格式 (根据您的实际文件名调整)
-    ev_file_p = sprintf('results_incentive_%.2f.mat', current_p); 
+    ev_file_p = sprintf('results_incentive_%.2f_1000_8am.mat', current_p); 
     
     fprintf('\n--- 正在处理价格 P = %.2f ---\n', current_p);
     
@@ -146,17 +152,17 @@ for k = 1:num_prices
         [ev_up, ev_down] = load_ev_data(ev_file_p);
         
         % ==================== [修改] 时间轴对齐逻辑 ====================
-        % 同样应用到价格循环中
+        % 同样应用到价格循环中 (调整为 8:00)
         len_ac = length(ac_up);
-        idx_6h = round(len_ac * (6/24)); 
+        idx_8h = round(len_ac * (8/24)); 
         
-        if idx_6h > 0 && idx_6h < len_ac
-            ac_up_shifted = [ac_up(idx_6h+1:end); ac_up(1:idx_6h)];
-            ac_down_shifted = [ac_down(idx_6h+1:end); ac_down(1:idx_6h)];
+        if idx_8h > 0 && idx_8h < len_ac
+            ac_up_shifted = [ac_up(idx_8h+1:end); ac_up(1:idx_8h)];
+            ac_down_shifted = [ac_down(idx_8h+1:end); ac_down(1:idx_8h)];
             
             ac_up = ac_up_shifted;
             ac_down = ac_down_shifted;
-            % fprintf('  已对齐 AC 时间轴 (6:30)。\n');
+            % fprintf('  已对齐 AC 时间轴 (8:00)。\n');
         end
         % ===============================================================
         
@@ -262,8 +268,9 @@ function plot_bar_chart(x_labels, y_data, ylabel_str, file_name_cn)
         b.FaceColor = [0.2 0.6 0.8];
     end
     
-    set(gca, 'XTickLabel', x_labels, 'FontSize', 12, 'FontName', 'Microsoft YaHei');
-    ylabel(ylabel_str, 'FontName', 'Microsoft YaHei', 'FontSize', 12);
+    % [修改] 放大字体
+    set(gca, 'XTickLabel', x_labels, 'FontSize', 15, 'FontName', 'Microsoft YaHei');
+    ylabel(ylabel_str, 'FontName', 'Microsoft YaHei', 'FontSize', 15);
     
     grid on;
     
@@ -281,7 +288,7 @@ function plot_bar_chart(x_labels, y_data, ylabel_str, file_name_cn)
         text(xtips(k), ytips(k) + v_offset, labels(k), ...
             'HorizontalAlignment', 'center', ...
             'VerticalAlignment', va, ...
-            'FontSize', 10, 'FontName', 'Arial'); 
+            'FontSize', 12, 'FontName', 'Arial'); % [修改] 字体放大至 12
     end
 
     % --- 边界美化 ---
@@ -298,7 +305,7 @@ function plot_bar_chart(x_labels, y_data, ylabel_str, file_name_cn)
     end
     
     yline(0, 'k-', 'LineWidth', 1.0);
-    legend({'计算数值'}, 'Location', 'best', 'FontName', 'Microsoft YaHei');
+    legend({'计算数值'}, 'Location', 'best', 'FontName', 'Microsoft YaHei', 'FontSize', 12);
 
     print(gcf, [file_name_cn '.png'], '-dpng', '-r300');
     fprintf('  已保存图片: %s.png\n', file_name_cn);
@@ -314,12 +321,13 @@ function plot_line_chart(x_data, y_data, xlabel_str, ylabel_str, line_color, fil
         'Color', line_color, 'MarkerFaceColor', line_color, ...
         'DisplayName', '指标趋势'); 
     
-    xlabel(xlabel_str, 'FontName', 'Microsoft YaHei', 'FontSize', 12);
-    ylabel(ylabel_str, 'FontName', 'Microsoft YaHei', 'FontSize', 12);
+    % [修改] 放大字体
+    xlabel(xlabel_str, 'FontName', 'Microsoft YaHei', 'FontSize', 15);
+    ylabel(ylabel_str, 'FontName', 'Microsoft YaHei', 'FontSize', 15);
     
     grid on;
-    set(gca, 'FontSize', 12, 'FontName', 'Microsoft YaHei');
-    legend('show', 'Location', 'best', 'FontName', 'Microsoft YaHei');
+    set(gca, 'FontSize', 15, 'FontName', 'Microsoft YaHei');
+    legend('show', 'Location', 'best', 'FontName', 'Microsoft YaHei', 'FontSize', 12);
     xlim([min(x_data)-2, max(x_data)+2]);
     
     print(gcf, [file_name_cn '.png'], '-dpng', '-r300');

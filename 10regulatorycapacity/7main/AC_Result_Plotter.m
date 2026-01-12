@@ -104,10 +104,11 @@ if has_single_result
         hold on;
         plot(time_points, Agg_P_Achieved_History, 'r-', 'LineWidth', 1.5, 'DisplayName', '聚合响应功率');
         hold off;
-        xlabel('时间 (小时)', 'FontSize', 12);
-        ylabel('功率 (kW)', 'FontSize', 12);
-        legend('show', 'Location', 'best', 'FontSize', 11);
-        set(gca, 'FontSize', 11);
+        % 字体放大
+        xlabel('时间 (小时)', 'FontSize', 20);
+        ylabel('功率 (kW)', 'FontSize', 20);
+        legend('show', 'Location', 'best', 'FontSize', 16);
+        set(gca, 'FontSize', 16);
         xlim([0, 24]); grid on;
         print(gcf, '图1_功率跟踪对比.png', '-dpng', '-r300');
     end
@@ -121,14 +122,15 @@ if has_single_result
         if num_AC_participating > 0
             set(h_ind(1), 'DisplayName', '单体空调SOC');
             if num_AC_participating > 1, set(h_ind(2:end), 'HandleVisibility', 'off'); end
-            legend([h_agg, h_ind(1)], 'Location', 'best', 'FontSize', 11);
+            legend([h_agg, h_ind(1)], 'Location', 'best', 'FontSize', 16); % 字体放大
         else
-            legend(h_agg, 'Location', 'best', 'FontSize', 11);
+            legend(h_agg, 'Location', 'best', 'FontSize', 16); % 字体放大
         end
         hold off;
-        xlabel('时间 (小时)', 'FontSize', 12);
-        ylabel('SOC', 'FontSize', 12);
-        set(gca, 'FontSize', 11);
+        % 字体放大
+        xlabel('时间 (小时)', 'FontSize', 20);
+        ylabel('SOC', 'FontSize', 20);
+        set(gca, 'FontSize', 16);
         xlim([0, 24]); ylim([-0.1, 1.1]); grid on;
         print(gcf, '图2_SOC状态对比.png', '-dpng', '-r300');
     end
@@ -137,10 +139,11 @@ if has_single_result
     if ~isempty(Individual_Temp_History)
         figure('Position', [100 300 1000 450]);
         plot(time_points, Individual_Temp_History, 'LineWidth', 0.5);
-        xlabel('时间 (小时)', 'FontSize', 12);
-        ylabel('温度 (°C)', 'FontSize', 12);
+        % 字体放大
+        xlabel('时间 (小时)', 'FontSize', 20);
+        ylabel('温度 (°C)', 'FontSize', 20);
         xlim([0, 24]); grid on;
-        set(gca, 'FontSize', 11);
+        set(gca, 'FontSize', 16);
         print(gcf, '图3_室内温度变化.png', '-dpng', '-r300');
     end
     
@@ -149,10 +152,11 @@ if has_single_result
         figure('Position', [100 400 1000 450]);
         plot(time_points, Individual_Power_History, 'LineWidth', 0.5);
         yline(0, 'k--', 'LineWidth', 1.5);
-        xlabel('时间 (小时)', 'FontSize', 12);
-        ylabel('功率 (kW)', 'FontSize', 12);
+        % 字体放大
+        xlabel('时间 (小时)', 'FontSize', 20);
+        ylabel('功率 (kW)', 'FontSize', 20);
         xlim([0, 24]); grid on;
-        set(gca, 'FontSize', 11);
+        set(gca, 'FontSize', 16);
         print(gcf, '图4_单体调节功率.png', '-dpng', '-r300');
     end
     
@@ -170,10 +174,11 @@ if has_single_result
             
         plot(time_points, Data_to_Plot, 'LineWidth', 0.5);
         yline(P_standby, 'k--', 'LineWidth', 1.5, 'DisplayName', '待机功率');
-        xlabel('时间 (小时)', 'FontSize', 12);
-        ylabel('功率 (kW)', 'FontSize', 12);
+        % 字体放大
+        xlabel('时间 (小时)', 'FontSize', 20);
+        ylabel('功率 (kW)', 'FontSize', 20);
         xlim([0, 24]); grid on;
-        set(gca, 'FontSize', 11);
+        set(gca, 'FontSize', 16);
         print(gcf, '图5_单体总制冷功率.png', '-dpng', '-r300');
     end
     
@@ -184,10 +189,11 @@ if has_single_result
         plot(time_points, Agg_Baseline_Power, 'b--', 'LineWidth', 2, 'DisplayName', '聚合基线功率');
         plot(time_points, Agg_Total_Power, 'r-', 'LineWidth', 2, 'DisplayName', '聚合总制冷功率');
         hold off;
-        xlabel('时间 (小时)', 'FontSize', 12);
-        ylabel('功率 (kW)', 'FontSize', 12);
-        legend('show', 'Location', 'best', 'FontSize', 11);
-        set(gca, 'FontSize', 11);
+        % 字体放大
+        xlabel('时间 (小时)', 'FontSize', 20);
+        ylabel('功率 (kW)', 'FontSize', 20);
+        legend('show', 'Location', 'best', 'FontSize', 16);
+        set(gca, 'FontSize', 16);
         xlim([0, 24]); grid on;
         print(gcf, '图6_聚合功率对比.png', '-dpng', '-r300');
     end
@@ -203,10 +209,11 @@ if has_single_result
             plot(time_points, Agg_Model_Potential_Down_History, 'r--', 'LineWidth', 2, 'DisplayName', '聚合模型下调潜力');
         end
         hold off;
-        xlabel('时间 (小时)', 'FontSize', 12);
-        ylabel('功率 (kW)', 'FontSize', 12);
-        legend('show', 'Location', 'best', 'FontSize', 11);
-        set(gca, 'FontSize', 11);
+        % 字体放大
+        xlabel('时间 (小时)', 'FontSize', 20);
+        ylabel('功率 (kW)', 'FontSize', 20);
+        legend('show', 'Location', 'best', 'FontSize', 16);
+        set(gca, 'FontSize', 16);
         xlim([0, 24]); grid on;
         print(gcf, '图7_聚合潜力对比.png', '-dpng', '-r300');
     end
@@ -255,10 +262,11 @@ if has_single_result
                       'EdgeColor', 'k', 'LineWidth', 1.5, 'LineStyle', '--');
             
             hold off;
-            xlabel('时间 (小时)', 'FontSize', 14);
-            ylabel('功率 (kW)', 'FontSize', 14);
-            legend('show', 'Location', 'best', 'FontSize', 13);
-            set(gca, 'FontSize', 13);
+            % 字体放大
+            xlabel('时间 (小时)', 'FontSize', 20);
+            ylabel('功率 (kW)', 'FontSize', 20);
+            legend('show', 'Location', 'best', 'FontSize', 16);
+            set(gca, 'FontSize', 16);
             xlim([0, 24]); grid on;
             
             print(gcf, '图8_聚合功率对比_母图.png', '-dpng', '-r300');
@@ -279,7 +287,9 @@ if has_single_result
             xlim([t_start_zoom, t_end_zoom]);
             ylim([y_rect_min, y_rect_max]);
             grid off; % <--- [修改] 移除子图网格线，保留坐标轴
-            set(gca, 'FontSize', 22);
+            
+            % 子图字体特大
+            set(gca, 'FontSize', 24); 
             
             % 去掉标题、XY轴标签、图例
             xlabel(''); ylabel('');
@@ -368,10 +378,11 @@ if exist(results_dir, 'dir')
                     end
                 end
                 hold off;
-                xlabel('时间 (小时)', 'FontSize', 12);
-                ylabel('聚合总制冷功率 (kW)', 'FontSize', 12);
-                legend(legend_str, 'Location', 'best', 'FontSize', 10);
-                grid on; set(gca, 'FontSize', 11); xlim([0, 24]);
+                % 字体放大
+                xlabel('时间 (小时)', 'FontSize', 20);
+                ylabel('聚合总制冷功率 (kW)', 'FontSize', 20);
+                legend(legend_str, 'Location', 'best', 'FontSize', 16);
+                grid on; set(gca, 'FontSize', 16); xlim([0, 24]);
                 print(gcf, '图8_不同电价下聚合制冷功率.png', '-dpng', '-r300');
             end
 
@@ -387,10 +398,11 @@ if exist(results_dir, 'dir')
                     end
                 end
                 hold off;
-                xlabel('时间 (小时)', 'FontSize', 12);
-                ylabel('AC集群上调潜力 (kW)', 'FontSize', 12);
-                legend(legend_str_up, 'Location', 'best', 'FontSize', 10);
-                grid on; set(gca, 'FontSize', 11); xlim([0, 24]);
+                % 字体放大
+                xlabel('时间 (小时)', 'FontSize', 20);
+                ylabel('AC集群上调潜力 (kW)', 'FontSize', 20);
+                legend(legend_str_up, 'Location', 'best', 'FontSize', 16);
+                grid on; set(gca, 'FontSize', 16); xlim([0, 24]);
                 print(gcf, '图9_不同电价下AC上调能力对比.png', '-dpng', '-r300');
             end
 
@@ -406,10 +418,11 @@ if exist(results_dir, 'dir')
                     end
                 end
                 hold off;
-                xlabel('时间 (小时)', 'FontSize', 12);
-                ylabel('AC集群下调潜力 (kW)', 'FontSize', 12);
-                legend(legend_str_down, 'Location', 'best', 'FontSize', 10);
-                grid on; set(gca, 'FontSize', 11); xlim([0, 24]);
+                % 字体放大
+                xlabel('时间 (小时)', 'FontSize', 20);
+                ylabel('AC集群下调潜力 (kW)', 'FontSize', 20);
+                legend(legend_str_down, 'Location', 'best', 'FontSize', 16);
+                grid on; set(gca, 'FontSize', 16); xlim([0, 24]);
                 print(gcf, '图10_不同电价下AC下调能力对比.png', '-dpng', '-r300');
             end
 
@@ -431,9 +444,10 @@ if exist(results_dir, 'dir')
             
             figure('Position', [300 300 800 500]);
             plot(prices_for_curve, max_powers_for_curve, 'bo-', 'LineWidth', 2, 'MarkerSize', 8, 'MarkerFaceColor', 'b');
-            xlabel('激励电价 (分/kW)', 'FontSize', 12);
-            ylabel('聚合整体功率峰值 (kW)', 'FontSize', 12);
-            grid on; set(gca, 'FontSize', 11);
+            % 字体放大
+            xlabel('激励电价 (分/kW)', 'FontSize', 20);
+            ylabel('聚合整体功率峰值 (kW)', 'FontSize', 20);
+            grid on; set(gca, 'FontSize', 16);
             print(gcf, '图11_AC激励价格-聚合整体功率特性.png', '-dpng', '-r300');
         else
             fprintf('  未提取到有效的批量数据。\n');
@@ -449,9 +463,9 @@ fprintf('\n------------------------------------------------------\n');
 fprintf('=== 开始执行不同时间步长 (dt) 对比绘图 ===\n');
 
 dt_files = {
-    'AC_Stateful_Simulation_Results_5min.mat', ...
-    'AC_Stateful_Simulation_Results_15min.mat', ...
-    'AC_Stateful_Simulation_Results_60min.mat'
+    'AC_Stateful_Simulation_Results_5min_pi.mat', ...
+    'AC_Stateful_Simulation_Results_15min_pi.mat', ...
+    'AC_Stateful_Simulation_Results_60min_pi.mat'
 };
 dt_labels = {'5 min', '15 min', '60 min'};
 line_styles = {'-', '--', '-.'};
@@ -496,10 +510,11 @@ if valid_dt_count > 0
         plot(data_dt_list(i).time, data_dt_list(i).up, 'LineWidth', 2.0, 'LineStyle', line_styles{i}, 'Color', colors_dt(i,:), 'DisplayName', ['dt = ' data_dt_list(i).label]);
     end
     hold off;
-    xlabel('时间 (小时)', 'FontSize', 14);
-    ylabel('AC集群上调潜力 (kW)', 'FontSize', 14);
-    legend('show', 'Location', 'best', 'FontSize', 12);
-    set(gca, 'FontSize', 12); xlim([0, 24]); 
+    % 字体放大
+    xlabel('时间 (小时)', 'FontSize', 20);
+    ylabel('AC集群上调潜力 (kW)', 'FontSize', 20);
+    legend('show', 'Location', 'best', 'FontSize', 16);
+    set(gca, 'FontSize', 16); xlim([0, 24]); 
     print(gcf, '图9_AC_Cluster_Up_Comparison_dt.png', '-dpng', '-r300');
     
     figure('Name', 'AC集群不同dt下调能力对比', 'Position', [200 750 1000 500]);
@@ -508,10 +523,11 @@ if valid_dt_count > 0
         plot(data_dt_list(i).time, data_dt_list(i).down, 'LineWidth', 2.0, 'LineStyle', line_styles{i}, 'Color', colors_dt(i,:), 'DisplayName', ['dt = ' data_dt_list(i).label]);
     end
     hold off;
-    xlabel('时间 (小时)', 'FontSize', 14);
-    ylabel('AC集群下调潜力 (kW)', 'FontSize', 14);
-    legend('show', 'Location', 'best', 'FontSize', 12);
-    set(gca, 'FontSize', 12); xlim([0, 24]);
+    % 字体放大
+    xlabel('时间 (小时)', 'FontSize', 20);
+    ylabel('AC集群下调潜力 (kW)', 'FontSize', 20);
+    legend('show', 'Location', 'best', 'FontSize', 16);
+    set(gca, 'FontSize', 16); xlim([0, 24]);
     print(gcf, '图10_AC_Cluster_Down_Comparison_dt.png', '-dpng', '-r300');
 else
     fprintf('  未加载到任何有效数据，无法绘制dt对比图。\n');

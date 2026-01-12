@@ -1,6 +1,7 @@
 function run_scenario_G_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_line, dt, ...
     P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
     Reliable_AC_Up, Reliable_EV_Up, Reliable_AC_Down, Reliable_EV_Down, ... 
+    Reliable_AC_Base, Reliable_EV_Base, ... % <--- [新增参数] 传入基线以计算总功率
     R_Gen_Max, R_Shed_Max, cost_params, net_params, direction_signal, options)
 
     fprintf('\n==========================================================\n');
@@ -12,7 +13,7 @@ function run_scenario_G_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
     % 修改策略：引入保守系数 (Conservative Factor)
     % 原因：确定性优化过于乐观，倾向于用满所有廉价VPP资源。
     %      通过乘以 0.6~0.7 的系数，模拟调度员预留裕度，强制模型动用一部分火电，从而提高成本。
-    conservative_factor = 1;  % <--- [关键修改] 这里可以调节 (0.6 表示只敢用 60% 的可靠容量)
+    conservative_factor = 0.88;  % <--- [关键修改] 这里可以调节 (0.6 表示只敢用 60% 的可靠容量)
     
     fprintf('  正在运行: 确定性优化 (Conservative Factor = %.2f) ...\n', conservative_factor);
     
@@ -87,24 +88,26 @@ function run_scenario_G_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
         cvar_det, cvar_stoch, (cvar_det - cvar_stoch)/cvar_det*100);
     fprintf('----------------------------------------------------------\n');
     
-    % --- 绘图逻辑 ---
+    %% 4. 绘图
+    
+    % --- 图 G1：成本与风险对比柱状图 ---
     fig = figure('Name', '确定性与随机优化对比', 'Color', 'w', 'Position', [100, 100, 600, 400]);
     
     yyaxis left
     b1 = bar([1, 2], [cost_det, cost_stoch], 0.4, 'FaceColor', [0.2 0.6 0.8]);
-    ylabel('运行成本 (元)', 'FontSize', 11);
+    ylabel('运行成本 (元)', 'FontSize', 13);
     ylim([min(cost_det, cost_stoch)*0.8, max(cost_det, cost_stoch)*1.1]);
     
-    text(1, cost_det, sprintf('%.0f', cost_det), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 10, 'FontWeight', 'bold');
-    text(2, cost_stoch, sprintf('%.0f', cost_stoch), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 10, 'FontWeight', 'bold');
+    text(1, cost_det, sprintf('%.0f', cost_det), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 12, 'FontWeight', 'bold');
+    text(2, cost_stoch, sprintf('%.0f', cost_stoch), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 12, 'FontWeight', 'bold');
     
     yyaxis right
     b2 = bar([1.4, 2.4], [cvar_det, cvar_stoch], 0.4, 'FaceColor', [0.8 0.3 0.3]);
-    ylabel('CVaR 风险 (MW)', 'FontSize', 11);
+    ylabel('CVaR 风险 (MW)', 'FontSize', 13);
     ylim([0, max(cvar_det, cvar_stoch)*1.5]); 
     
-    text(1.4, cvar_det, sprintf('%.4f', cvar_det), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 10, 'Color', 'r');
-    text(2.4, cvar_stoch, sprintf('%.4f', cvar_stoch), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 10, 'Color', 'r');
+    text(1.4, cvar_det, sprintf('%.4f', cvar_det), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 12, 'Color', 'r');
+    text(2.4, cvar_stoch, sprintf('%.4f', cvar_stoch), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 12, 'Color', 'r');
     
     set(gca, 'XTick', [1.2, 2.2], 'XTickLabel', {'确定性优化', '随机优化'}, 'FontSize', 11);
     legend({'运行成本', 'CVaR 风险'}, 'Location', 'north', 'Orientation', 'horizontal');
@@ -112,6 +115,73 @@ function run_scenario_G_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
     
     print(fig, '场景G_确定性与随机优化对比.png', '-dpng', '-r600');
     fprintf('  > 已保存对比图: 场景G_确定性与随机优化对比.png\n');
+
+    % ================= [新增部分] =================
+    % 准备绘图数据
+    t_vector = 8 : dt : (8 + (T_steps-1)*dt);
+    dir_sign = sign(direction_signal);
+    dir_sign(dir_sign == 0) = 1;
+
+    % 计算调节功率 (Regulation Power, 带符号)
+    % 确定性
+    P_Reg_AC_Det = st_det.P_AC .* dir_sign;
+    P_Reg_EV_Det = st_det.P_EV .* dir_sign;
+    P_Reg_Sum_Det = P_Reg_AC_Det + P_Reg_EV_Det;
+    % 随机
+    P_Reg_AC_Stoch = st_stoch.P_AC .* dir_sign;
+    P_Reg_EV_Stoch = st_stoch.P_EV .* dir_sign;
+    P_Reg_Sum_Stoch = P_Reg_AC_Stoch + P_Reg_EV_Stoch;
+
+    % 计算总功率 (Total Power = Base + Regulation)
+    % 确定性
+    P_Tot_Sum_Det = (Reliable_AC_Base + Reliable_EV_Base) + P_Reg_Sum_Det;
+    % 随机
+    P_Tot_Sum_Stoch = (Reliable_AC_Base + Reliable_EV_Base) + P_Reg_Sum_Stoch;
+    % 基线总功率 (参考)
+    P_Tot_Base = Reliable_AC_Base + Reliable_EV_Base;
+
+    % --- 图 G2：AC与EV聚合体总功率对比 ---
+    fig2 = figure('Name', 'AC与EV聚合体总功率对比', 'Color', 'w', 'Position', [150, 150, 700, 400]);
+    hold on;
+    plot(t_vector, P_Tot_Base, 'k--', 'LineWidth', 1.5, 'DisplayName', '基线总功率 (无调节)');
+    plot(t_vector, P_Tot_Sum_Det, 'b-', 'LineWidth', 1.5, 'DisplayName', '总功率 (确定性优化)');
+    plot(t_vector, P_Tot_Sum_Stoch, 'r-', 'LineWidth', 2.0, 'DisplayName', '总功率 (随机优化)');
+    
+    ylabel('总功率 (MW)', 'FontName', 'Microsoft YaHei', 'FontSize', 16);
+    xlabel('时刻', 'FontName', 'Microsoft YaHei', 'FontSize', 16);
+    xlim([8, 32]);
+    set(gca, 'XTick', [8, 12, 16, 20, 24, 28, 32], ...
+             'XTickLabel', {'08:00', '12:00', '16:00', '20:00', '00:00', '04:00', '08:00'}, ...
+             'FontName', 'Microsoft YaHei', 'FontSize', 13);
+    legend('Location', 'best', 'FontName', 'Microsoft YaHei');
+    grid on;
+    print(fig2, '场景G_AC与EV聚合体总功率对比.png', '-dpng', '-r600');
+    fprintf('  > 已保存对比图: 场景G_AC与EV聚合体总功率对比.png\n');
+
+    % --- 图 G3：AC与EV聚合体功率调节量对比 ---
+    fig3 = figure('Name', 'AC与EV聚合体功率调节量对比', 'Color', 'w', 'Position', [200, 200, 700, 400]);
+    hold on;
+    % 绘制零线
+    yline(0, 'k-', 'HandleVisibility', 'off');
+    
+    plot(t_vector, P_Reg_Sum_Det, 'b--', 'LineWidth', 1.5, 'DisplayName', '调节量 (确定性优化)');
+    plot(t_vector, P_Reg_Sum_Stoch, 'r-', 'LineWidth', 2.0, 'DisplayName', '调节量 (随机优化)');
+    
+    % 填充差异区域 (可选，增强视觉效果)
+    x_fill = [t_vector, fliplr(t_vector)];
+    y_fill = [P_Reg_Sum_Det', fliplr(P_Reg_Sum_Stoch')];
+    fill(x_fill, y_fill, [0.8 0.8 0.8], 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'DisplayName', '策略差异');
+
+    ylabel('功率调节量 (MW)', 'FontName', 'Microsoft YaHei', 'FontSize', 16);
+    xlabel('时刻', 'FontName', 'Microsoft YaHei', 'FontSize', 16);
+    xlim([8, 32]);
+    set(gca, 'XTick', [8, 12, 16, 20, 24, 28, 32], ...
+             'XTickLabel', {'08:00', '12:00', '16:00', '20:00', '00:00', '04:00', '08:00'}, ...
+             'FontName', 'Microsoft YaHei', 'FontSize', 13);
+    legend('Location', 'best', 'FontName', 'Microsoft YaHei');
+    grid on;
+    print(fig3, '场景G_AC与EV聚合体功率调节量对比.png', '-dpng', '-r600');
+    fprintf('  > 已保存对比图: 场景G_AC与EV聚合体功率调节量对比.png\n');
 end
 
 %% --- 辅助函数：计算运行成本 (修复向量乘法) ---

@@ -111,12 +111,12 @@ Bounds_AC_Down = calc_bounds_down(AC_Down_Sorted, target_scenarios);
 Bounds_EV_Up   = calc_bounds_up(EV_Up_Sorted, target_scenarios);
 Bounds_EV_Down = calc_bounds_down(EV_Down_Sorted, target_scenarios);
 
-%% 5. 绘图参数设置
+%% 5. 绘图参数设置 (字体放大)
 x_ticks_new = [0, 6, 12, 18, 24];
 x_labels_new = {'00:00', '06:00', '12:00', '18:00', '24:00'};
 default_font = 'Microsoft YaHei';
-axis_font_size = 14;
-label_font_size = 16;
+axis_font_size = 16;  % 坐标轴刻度字体
+label_font_size = 20; % 坐标轴标签字体
 
 %% 6. 绘制 AC 调节域
 fprintf('正在绘制 AC 概率边界图像...\n');
@@ -144,7 +144,8 @@ yline(0, 'k--', 'LineWidth', 1.2, 'HandleVisibility', 'off');
 % 装饰
 grid on;
 xlim([0, 24]);
-legend([p100_u, p95_u, p80_u], 'Location', 'best', 'FontSize', 12, 'FontName', default_font);
+% 图例设置 (字体放大)
+legend([p100_u, p95_u, p80_u], 'Location', 'best', 'FontSize', 16, 'FontName', default_font);
 set(gca, 'XTick', x_ticks_new, 'XTickLabel', x_labels_new, ...
     'FontSize', axis_font_size, 'FontName', default_font, 'LineWidth', 1.2);
 xlabel('时间', 'FontSize', label_font_size, 'FontName', default_font); 
@@ -181,7 +182,8 @@ yline(0, 'k--', 'LineWidth', 1.2, 'HandleVisibility', 'off');
 % 装饰
 grid on;
 xlim([0, 24]);
-legend([p100_ev, p95_ev, p80_ev], 'Location', 'best', 'FontSize', 12, 'FontName', default_font);
+% 图例设置 (字体放大)
+legend([p100_ev, p95_ev, p80_ev], 'Location', 'best', 'FontSize', 16, 'FontName', default_font);
 set(gca, 'XTick', x_ticks_new, 'XTickLabel', x_labels_new, ...
     'FontSize', axis_font_size, 'FontName', default_font, 'LineWidth', 1.2);
 xlabel('时间', 'FontSize', label_font_size, 'FontName', default_font); 
