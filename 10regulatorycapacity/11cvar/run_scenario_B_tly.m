@@ -1,7 +1,6 @@
 function strategies = run_scenario_B_tly(beta_values, Max_Iter, N_scenarios, N_bus, N_line, dt, ...
     P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, Physical_AC_Up, Physical_EV_Up, ...
     R_Gen_Max, R_Shed_Max, cost_params, net_params, direction_signal, lambda_SDCI, lambda_Rho, options)
-
     fprintf('\n>>> 场景 B: 风险偏好灵敏度分析 <<<\n');
     b_run_cost = nan(1, length(beta_values)); 
     b_slack_sum = nan(1, length(beta_values));
@@ -9,7 +8,6 @@ function strategies = run_scenario_B_tly(beta_values, Max_Iter, N_scenarios, N_b
     b_risk_val = nan(1, length(beta_values));
     strategies = cell(1, length(beta_values));
     T_steps = length(P_grid_demand);
-
     for i = 1:length(beta_values)
         beta = beta_values(i);
         fprintf('  工况 %d (Beta=%d): \n', i, beta); 
@@ -24,7 +22,6 @@ function strategies = run_scenario_B_tly(beta_values, Max_Iter, N_scenarios, N_b
         for iter = 1:Max_Iter
             net_params_safe = net_params;
             net_params_safe.ShedDist = zeros(N_bus, 1);
-
             [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fast_ramp_tly(...
                 P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
                 Physical_AC_Up, Physical_EV_Up, ...
@@ -37,11 +34,9 @@ function strategies = run_scenario_B_tly(beta_values, Max_Iter, N_scenarios, N_b
             for t = 1:T_steps
                 if direction_signal(t) == 1
                     rows_t = start_row_net + (t-1)*2*N_line + (1 : 2*N_line);
-
                     % 1. 翻转 AC 和 EV（代表增加负荷/吸电）—— 原有逻辑，正确
                     A(rows_t, info.idx_P_AC(t)) = -A(rows_t, info.idx_P_AC(t));
                     A(rows_t, info.idx_P_EV(t)) = -A(rows_t, info.idx_P_EV(t));
-
                     % 2. 【新增】翻转 Gen（代表减少发电/等效吸电）—— 修复逻辑
                     % 只有翻转后，P_Gen > 0 才代表“火电出力下降”，对潮流表现为负贡献
                     A(rows_t, info.idx_P_Gen(t)) = -A(rows_t, info.idx_P_Gen(t));
@@ -95,7 +90,6 @@ function strategies = run_scenario_B_tly(beta_values, Max_Iter, N_scenarios, N_b
                 end
                 strategies{i}.SDCI_History(iter) = val_SDCI;
                 strategies{i}.Rho_History(iter) = val_Rho;
-
                 cost_gen = sum((cost_params.c1_ac.*P_AC_curr + cost_params.c2_ac*P_AC_curr.^2)*dt + ...
                                (cost_params.c1_ev.*P_EV_curr + cost_params.c2_ev*P_EV_curr.^2)*dt + ...
                                (cost_params.c1_gen.*P_Gen_curr + cost_params.c2_gen*P_Gen_curr.^2)*dt);
@@ -107,17 +101,34 @@ function strategies = run_scenario_B_tly(beta_values, Max_Iter, N_scenarios, N_b
                 b_slack_sum(i) = sum(P_Shed_curr + P_Gen_curr) * dt;
                 b_agg_sum(i)   = sum(P_AC_curr + P_EV_curr) * dt; % [新增] 聚合体总能量
                 b_risk_val(i) = cvar_val;
-
                 if iter == Max_Iter
                     fprintf('    发电成本: %.2f (元), 火电调节量: %.2f (MWh), 总成本: %.2f (元), CVaR风险: %.2f (MW), rho: %.4f, sdci: %.4f\n', ...
                         cost_gen, b_slack_sum(i), total_real_cost, cvar_val, val_Rho, val_SDCI);
+                    
+                    % --- [新增] 目标函数成分量级诊断 (用于验证强凸主导假设) ---
+                    Term_Cost = cost_gen + cost_slack;
+                    Term_Risk = beta * cvar_val; 
+                    Term_SDCI = lambda_SDCI * val_SDCI;
+                    Term_Rho  = lambda_Rho * val_Rho;
+                    
+                    Total_Obj_Approx = Term_Cost + Term_Risk + Term_SDCI + Term_Rho;
+                    if Total_Obj_Approx == 0, Total_Obj_Approx = 1; end % 防止分母为0
+
+                    Ratio_Cost = Term_Cost / Total_Obj_Approx * 100;
+                    Ratio_Risk = Term_Risk / Total_Obj_Approx * 100;
+                    Ratio_Penalty = (Term_SDCI + Term_Rho) / Total_Obj_Approx * 100;
+
+                    fprintf('    [量级诊断] ------------------------------------------------------\n');
+                    fprintf('    1. 基础成本 (Quadratic Cost):  %12.2f  (占比 %5.1f%%)\n', Term_Cost, Ratio_Cost);
+                    fprintf('    2. 风险成本 (CVaR Risk):       %12.2f  (占比 %5.1f%%)\n', Term_Risk, Ratio_Risk);
+                    fprintf('    3. 协同惩罚 (SDCI + Rho):      %12.2f  (占比 %5.1f%%)\n', Term_SDCI + Term_Rho, Ratio_Penalty);
+                    fprintf('    -----------------------------------------------------------------\n');
                 end
             else
                 fprintf('    失败 (Exitflag %d)\n', exitflag); break;
             end
         end
     end
-
     % --- 绘图 B: 风险灵敏度 (修改版: 加入聚合体调度量) ---
     if any(~isnan(b_slack_sum))
         figure('Name', '场景B_风险灵敏度', 'Color', 'w', 'Position', [100, 100, 900, 400]);

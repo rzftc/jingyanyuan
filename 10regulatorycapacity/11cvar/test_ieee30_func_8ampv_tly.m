@@ -378,7 +378,7 @@ net_params.AC_Params = AC_Params_Scaled;
 net_params.EV_Params = []; % [修改] 置空 EV 参数
 net_params.Reliable_EV_Base = Reliable_EV_Base; 
 net_params.Direction_Signal = direction_signal; 
-
+net_params.P_Gen_Base = P_Gen_Schedule;
 % [新增] 将能量边界和时间步长注入 net_params
 net_params.Reliable_EV_E_Up = Reliable_EV_E_Up;
 net_params.Reliable_EV_E_Down = Reliable_EV_E_Down;
@@ -429,12 +429,12 @@ run_scenario_E_tly(P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
 
 fprintf('\n所有测试结束。\n');
 %% 5. 运行场景 F: 协同约束效益对比验证
-beta_for_comparison = 46; 
+beta_for_comparison = 5; 
 
 run_scenario_F_comparison(beta_for_comparison, 2, N_scenarios, N_bus, N_line, dt, ...
     P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
     Effective_Reliable_AC, Effective_Reliable_EV, ... % <--- 注意：这里使用可靠边界！
-    R_Gen_Max, R_Shed_Max, cost_params, net_params, direction_signal, 10, 10, options);
+    R_Gen_Max, R_Shed_Max, cost_params, net_params, direction_signal, 100, 100, options);
 %% 5. 运行场景 G: 确定性 vs 随机优化 效益对比分析
 beta_for_G = 100; 
 

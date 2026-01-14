@@ -1,10 +1,9 @@
-function [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fast_ramp_tly(...
+function [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fast_ramp_tly_origin(...
     P_req, S_AC, S_EV, R_AC, R_EV, R_Gen, R_Shed, cost_p, risk_p, net_p)
 % construct_risk_constrained_qp_fast_ramp_tly 
-% 修改说明：
-% 1. 移除了 AC 和 EV 的爬坡约束。
-% 2. 仅对火电机组 (Gen) 施加物理出力爬坡约束。
-% 3. 设定了合理的默认爬坡阈值 (15 MW/15min)。
+% 修改：仅保留 AC 灰盒约束，移除 EV 状态约束。
+% [新增] 增加 EV 累积能量约束
+% [修正] 爬坡约束逻辑：仅在同向调节时施加约束，允许方向切换时的快速跳变 (方案A)
 
     [T, N_scenarios] = size(S_AC);
     N_line = size(net_p.PTDF, 1);
@@ -13,7 +12,7 @@ function [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fa
     ac_p = net_p.AC_Params;
     dir_sig = net_p.Direction_Signal; 
     
-    % 提取能量边界参数
+    % [新增] 提取能量边界参数
     if isfield(net_p, 'Reliable_EV_E_Up') && isfield(net_p, 'dt')
         E_Up_Bound = net_p.Reliable_EV_E_Up;
         E_Down_Bound = net_p.Reliable_EV_E_Down;
@@ -32,7 +31,7 @@ function [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fa
     idx_eta    = 4*T + 1;
     idx_z      = (4*T + 2) : (4*T + 1 + N_scenarios);
     
-    % AC 状态变量
+    % [修改] 仅保留 AC 状态变量
     idx_S_AC   = (idx_z(end) + 1) : (idx_z(end) + T);
     
     % 变量总数
@@ -155,88 +154,61 @@ function [H, f, A, b, Aeq, beq, lb, ub, info] = construct_risk_constrained_qp_fa
         end
     end
 
-    % --- [核心修改] 爬坡约束 (仅限制火电机组物理爬坡) ---
+    % --- [关键修改] 爬坡约束 (仅同向约束) ---
     A_ramp = sparse(0, num_vars); b_ramp = zeros(0, 1);
-    
     if T > 1
-        % 1. 设定合理的火电物理爬坡阈值
-        % 依据：IEEE 30 节点系统，假设最大机组约 300+ MW。
-        % 取 15 MW/15min (即 1 MW/min) 作为合理的物理爬坡限制。
-        % 这代表了机组出力的平滑变化要求。
-        default_gen_ramp = 15; 
+        if isfield(risk_p, 'ramp_ac') && ~isempty(risk_p.ramp_ac), ramp_ac = risk_p.ramp_ac(:); else, ramp_ac = 999 * ones(T-1, 1); end
+        if isfield(risk_p, 'ramp_ev') && ~isempty(risk_p.ramp_ev), ramp_ev = risk_p.ramp_ev(:); else, ramp_ev = 999 * ones(T-1, 1); end
+        if isfield(risk_p, 'ramp_gen') && ~isempty(risk_p.ramp_gen), ramp_gen = risk_p.ramp_gen(:); else, ramp_gen = 999 * ones(T-1, 1); end
         
-        if isfield(risk_p, 'ramp_gen') && ~isempty(risk_p.ramp_gen)
-            ramp_gen_limit = risk_p.ramp_gen(:); 
-        else
-            ramp_gen_limit = default_gen_ramp * ones(T-1, 1);
-        end
-        
-        % 2. 获取基线功率 (用于计算物理总出力)
-        % 注意：请确保主程序 net_params 中包含 P_Gen_Base
-        if isfield(net_p, 'P_Gen_Base')
-            P_base = net_p.P_Gen_Base;
-        else
-            % 缺失处理：默认为 0，但会打印警告
-            warning('[Ramp] net_p.P_Gen_Base 缺失，火电将按照调节量爬坡计算（不准确）！');
-            P_base = zeros(T, 1);
-        end
-
-        max_ramp_con = 2 * (T - 1); 
+        max_ramp_con = 2 * 3 * (T - 1);
         A_ramp = sparse(max_ramp_con, num_vars);
         b_ramp = zeros(max_ramp_con, 1);
-        
         k = 0;
         for t = 2:T
-             % 逻辑说明：
-             % P_total(t) = P_base(t) + Sign(t) * P_QP(t)
-             % dir_sig(t) == 1  (系统缺负荷) => Gen 下调 => P_QP 为减量 => Sign = -1
-             % dir_sig(t) == -1 (系统缺电)   => Gen 上调 => P_QP 为增量 => Sign = +1
-             
-             s_t = -1; 
-             if dir_sig(t) == -1, s_t = 1; end
-             
-             s_prev = -1;
-             if dir_sig(t-1) == -1, s_prev = 1; end
-             
-             % 计算基线变化量
-             dBase = P_base(t) - P_base(t-1);
-             limit_val = ramp_gen_limit(min(t-1, end));
-             
-             % 约束 1: P_total(t) - P_total(t-1) <= Limit
-             % => (Base_t + s_t*P_t) - (Base_p + s_p*P_p) <= Limit
-             % => s_t*P_t - s_p*P_p <= Limit - dBase
-             k = k + 1;
-             A_ramp(k, idx_P_Gen(t))   = s_t;
-             A_ramp(k, idx_P_Gen(t-1)) = -s_prev;
-             b_ramp(k) = limit_val - dBase;
-             
-             % 约束 2: P_total(t) - P_total(t-1) >= -Limit
-             % => -(P_total(t) - P_total(t-1)) <= Limit
-             % => -(s_t*P_t - s_p*P_p + dBase) <= Limit
-             % => -s_t*P_t + s_p*P_p <= Limit + dBase
-             k = k + 1;
-             A_ramp(k, idx_P_Gen(t))   = -s_t;
-             A_ramp(k, idx_P_Gen(t-1)) = s_prev;
-             b_ramp(k) = limit_val + dBase;
+             % [修改点] 仅当 t 与 t-1 方向一致时，施加爬坡约束
+             % 若方向不一致(dir_sig 跳变)，则视为过零点，不施加差分约束
+             if dir_sig(t) == dir_sig(t-1)
+                 tt = t-1;
+                 % AC
+                 k=k+1; A_ramp(k, idx_P_AC(t))=1; A_ramp(k, idx_P_AC(t-1))=-1; b_ramp(k)=ramp_ac(min(tt,end));
+                 k=k+1; A_ramp(k, idx_P_AC(t))=-1; A_ramp(k, idx_P_AC(t-1))=1; b_ramp(k)=ramp_ac(min(tt,end));
+                 % EV
+                 k=k+1; A_ramp(k, idx_P_EV(t))=1; A_ramp(k, idx_P_EV(t-1))=-1; b_ramp(k)=ramp_ev(min(tt,end));
+                 k=k+1; A_ramp(k, idx_P_EV(t))=-1; A_ramp(k, idx_P_EV(t-1))=1; b_ramp(k)=ramp_ev(min(tt,end));
+                 % Gen
+                 k=k+1; A_ramp(k, idx_P_Gen(t))=1; A_ramp(k, idx_P_Gen(t-1))=-1; b_ramp(k)=ramp_gen(min(tt,end));
+                 k=k+1; A_ramp(k, idx_P_Gen(t))=-1; A_ramp(k, idx_P_Gen(t-1))=1; b_ramp(k)=ramp_gen(min(tt,end));
+             end
         end
+        % 截断未使用的预分配行
+        A_ramp = A_ramp(1:k, :); b_ramp = b_ramp(1:k);
     end
 
     % [新增] 累积能量约束 (Cumulative Energy Constraint)
+    % 约束逻辑：-E_Down(k) <= sum(dir(t)*P(t)*dt) <= E_Up(k)
     A_energy = sparse(0, num_vars); b_energy = zeros(0, 1);
     
     if enable_energy_constraint
+        % 我们有 2*T 个约束：T 个上限，T 个下限
         num_energy_con = 2 * T;
         A_energy = sparse(num_energy_con, num_vars);
         b_energy = zeros(num_energy_con, 1);
         
         for k = 1:T
+            % 构建累积系数向量：对于 t=1...k，系数为 dir_sig(t) * dt
+            % 注意：dir_sig > 0 表示上调(充电)，能量增加；dir_sig < 0 表示下调(放电)，能量减少
+            
             % 上限约束行 (Row k)
+            % sum_{t=1}^k [dir(t)*dt] * P_EV(t) <= E_Up_Bound(k)
             for t = 1:k
                 A_energy(k, idx_P_EV(t)) = dir_sig(t) * dt;
             end
             b_energy(k) = E_Up_Bound(k);
             
             % 下限约束行 (Row T+k)
+            % sum_{t=1}^k [dir(t)*dt] * P_EV(t) >= -E_Down_Bound(k)
+            % => sum_{t=1}^k [-dir(t)*dt] * P_EV(t) <= E_Down_Bound(k)
             for t = 1:k
                 A_energy(T+k, idx_P_EV(t)) = -dir_sig(t) * dt;
             end
