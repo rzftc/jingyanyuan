@@ -274,47 +274,51 @@ Scenarios_EV_Up = Effective_Scen_EV;
 Physical_AC_Up  = Effective_Phys_AC;
 Physical_EV_Up  = Effective_Phys_EV;
 
-%% ================= 绘图验证 (论文格式修改) =================
+%% ================= 绘图验证 (论文格式) =================
 
 % --- 图1：系统功率平衡 ---
-fig1 = figure('Name', 'System_Balance', 'Color', 'w', 'Position', [100, 100, 800, 400]);
+fig1 = figure('Name', 'System_Balance', 'Color', 'w', 'Position', [100, 100, 800, 500]);
 hold on;
-plot(t_axis, P_System_Total_Load, 'k-', 'LineWidth', 1.5, 'DisplayName', '系统总负荷 (含AC/EV)');
-plot(t_axis, P_Net_Load, 'g--', 'LineWidth', 1.5, 'DisplayName', '净负荷 (扣除光伏)');
-plot(t_axis, P_Gen_Schedule, 'b-.', 'LineWidth', 1.5, 'DisplayName', '日前发电计划');
-legend('Location', 'best'); 
-ylabel('功率 (MW)'); xlabel('时刻'); 
-grid on;
 
-% 修改 X 轴：[8, 32] 对应 08:00 到次日 08:00
+plot(t_axis, P_System_Total_Load, 'k-', 'LineWidth', 2.0, 'DisplayName', '系统总负荷 (含AC/EV)');
+plot(t_axis, P_Net_Load, 'g--', 'LineWidth', 2.0, 'DisplayName', '净负荷 (扣除光伏)');
+plot(t_axis, P_Gen_Schedule, 'b-.', 'LineWidth', 2.0, 'DisplayName', '日前发电计划');
+
+legend('Location', 'best', 'FontSize', 18);
+
+ylabel('功率 (MW)', 'FontSize', 20, 'FontWeight', 'bold');
+xlabel('时刻', 'FontSize', 20, 'FontWeight', 'bold');
+
 xlim([8, 32]);
 set(gca, 'XTick', [8, 12, 16, 20, 24, 28, 32]);
 set(gca, 'XTickLabel', {'08:00', '12:00', '16:00', '20:00', '00:00', '04:00', '08:00'});
 
-% 保存为中文文件名
+set(gca, 'FontSize', 18, 'LineWidth', 1.5);
+
 print(fig1, '源荷平衡验证.png', '-dpng', '-r600');
 fprintf('  > 已保存: 源荷平衡验证.png (600 DPI)\n');
 
 % --- 图2：调节指令 ---
-fig2 = figure('Name', 'Regulation_Instruction', 'Color', 'w', 'Position', [100, 550, 800, 400]);
+fig2 = figure('Name', 'Regulation_Instruction', 'Color', 'w', 'Position', [100, 650, 800, 500]);
 hold on;
-area(t_axis, P_grid_demand .* direction_signal, 'FaceColor', [0.7 0.7 0.9]);
-ylabel('调节指令 (MW)'); xlabel('时刻'); 
-grid on;
 
-% 修改 X 轴：[8, 32] 对应 08:00 到次日 08:00
+area(t_axis, P_grid_demand .* direction_signal, 'FaceColor', [0.7 0.7 0.9], 'EdgeColor', 'none', 'DisplayName', '调节指令');
+
+ylabel('调节指令 (MW)', 'FontSize', 20, 'FontWeight', 'bold');
+xlabel('时刻', 'FontSize', 20, 'FontWeight', 'bold');
+
 xlim([8, 32]);
 set(gca, 'XTick', [8, 12, 16, 20, 24, 28, 32]);
 set(gca, 'XTickLabel', {'08:00', '12:00', '16:00', '20:00', '00:00', '04:00', '08:00'});
 
-% 保存为中文文件名
+set(gca, 'FontSize', 18, 'LineWidth', 1.5);
+
 print(fig2, '调节指令验证.png', '-dpng', '-r600');
 fprintf('  > 已保存: 调节指令验证.png (600 DPI)\n');
 fprintf('  - 光伏峰值: %.2f MW\n', max(P_PV_Total));
 fprintf('  - 系统总负荷峰值: %.2f MW\n', max(P_System_Total_Load));
 fprintf('  - 调节指令峰值 (绝对值): %.2f MW\n', max(P_grid_demand));
 close all;
-
 %% ================= 4. 构建 IEEE 30 节点网络模型 =================
 fprintf('\n>>> 构建 IEEE 30 节点网络模型 (含光伏与VPP基线) <<<\n');
 
