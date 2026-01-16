@@ -59,7 +59,7 @@ function strategies = run_scenario_B_tly(beta_values, Max_Iter, N_scenarios, N_b
                 f(info.idx_P_EV) = f(info.idx_P_EV) + (lambda_SDCI * P_AC_prev * dt);
                 
                 % 3. Rho 惩罚项 (减少同向趋势 / 相关性)
-                % 原理：最小化 Cov(AC, EV)，线性化为 P_AC * (P_EV_prev - Mean_EV)
+                % 原理：最小化 Cov(AC, EV，线性化为 P_AC * (P_EV_prev - Mean_EV)
                 % 对应论文公式 (4-36)
                 f(info.idx_P_AC) = f(info.idx_P_AC) + (lambda_Rho * (P_EV_prev - Mean_EV) * dt);
                 f(info.idx_P_EV) = f(info.idx_P_EV) + (lambda_Rho * (P_AC_prev - Mean_AC) * dt);
@@ -129,9 +129,9 @@ function strategies = run_scenario_B_tly(beta_values, Max_Iter, N_scenarios, N_b
             end
         end
     end
-    % --- 绘图 B: 风险灵敏度 (修改版: 加入聚合体调度量) ---
+    % --- 绘图 B: 风险灵敏度 (修改版: 格式优化) ---
     if any(~isnan(b_slack_sum))
-        figure('Name', '场景B_风险灵敏度', 'Color', 'w', 'Position', [100, 100, 900, 400]);
+        figure('Name', '场景B_风险灵敏度', 'Color', 'w', 'Position', [100, 100, 900, 500]);
         yyaxis left; 
         
         % 准备数据：第一列是聚合体(AC+EV)，第二列是备用(Gen+Shed)
@@ -142,33 +142,41 @@ function strategies = run_scenario_B_tly(beta_values, Max_Iter, N_scenarios, N_b
         b(1).FaceColor = [0.2 0.6 0.8]; % 蓝色系：聚合体
         b(2).FaceColor = [0.8 0.3 0.3]; % 红色系：备用资源
         
-        ylabel('调度能量 (MWh)'); 
-        set(gca, 'XTick', 1:length(beta_values), 'XTickLabel', beta_values);
+        % [修改] 坐标轴标签大字号加粗
+        ylabel('调度能量 (MWh)', 'FontSize', 20, 'FontWeight', 'bold'); 
+        % [修改] 坐标轴刻度大字号，框线加粗
+        set(gca, 'XTick', 1:length(beta_values), 'XTickLabel', beta_values, 'FontSize', 18, 'LineWidth', 1.5);
         
         % 为分组柱状图添加数值标签
         for k = 1:2
             xt = b(k).XEndPoints;
             yt = b(k).YEndPoints;
             for i = 1:length(xt)
+                % [修改] 数值标签字号调整为 14
                 text(xt(i), yt(i), sprintf('%.2f', yt(i)), ...
                     'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', ...
-                    'FontSize', 10, 'Color', b(k).FaceColor * 0.8, 'FontWeight', 'bold');
+                    'FontSize', 14, 'Color', b(k).FaceColor * 0.8, 'FontWeight', 'bold');
             end
         end
         
         yyaxis right; 
-        plot(1:length(beta_values), b_risk_val, 'k-o', 'LineWidth', 2, 'MarkerSize', 8, 'MarkerFaceColor', 'y'); 
-        ylabel('CVaR 潜在违约风险 (MW)'); 
+        plot(1:length(beta_values), b_risk_val, 'k-o', 'LineWidth', 2.0, 'MarkerSize', 8, 'MarkerFaceColor', 'y'); 
+        % [修改] 坐标轴标签大字号加粗
+        ylabel('CVaR 潜在违约风险 (MW)', 'FontSize', 20, 'FontWeight', 'bold'); 
         for i = 1:length(b_risk_val)
+            % [修改] 数值标签字号调整为 16
             text(i, b_risk_val(i), sprintf('%.2f', b_risk_val(i)), ...
                 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', ...
-                'FontSize', 12, 'Color', 'k', 'FontWeight', 'bold');
+                'FontSize', 16, 'Color', 'k', 'FontWeight', 'bold');
         end
         
-        xlabel('风险厌恶系数 \beta');
-        % 更新图例
-        legend({'聚合体 (AC+EV)', '备用 (Gen+Shed)', '潜在违约风险 (CVaR)'}, 'Location', 'best');
-        grid on;
+        % [修改] 横坐标标签大字号加粗
+        xlabel('风险厌恶系数 \beta', 'FontSize', 20, 'FontWeight', 'bold');
+        % [修改] 图例大字号
+        legend({'聚合体 (AC+EV)', '备用 (Gen+Shed)', '潜在违约风险 (CVaR)'}, 'Location', 'best', 'FontSize', 18);
+        
+        % [修改] 去除网格线
+        % grid on; % 已注释
         print(gcf, '风险偏好灵敏度分析.png', '-dpng', '-r300');
     end
 end
