@@ -440,7 +440,7 @@ run_scenario_F_comparison(beta_for_comparison, 2, N_scenarios, N_bus, N_line, dt
     Effective_Reliable_AC, Effective_Reliable_EV, ... % <--- 注意：这里使用可靠边界！
     R_Gen_Max, R_Shed_Max, cost_params, net_params, direction_signal, 100, 100, options);
 %% 5. 运行场景 G: 确定性 vs 随机优化 效益对比分析
-beta_for_G = 100; 
+beta_for_G = 10; 
 
 run_scenario_G_comparison(beta_for_G, Max_Iter, N_scenarios, N_bus, N_line, dt, ...
     P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...

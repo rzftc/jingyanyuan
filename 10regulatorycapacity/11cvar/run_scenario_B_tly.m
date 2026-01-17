@@ -162,7 +162,7 @@ function strategies = run_scenario_B_tly(beta_values, Max_Iter, N_scenarios, N_b
         yyaxis right; 
         plot(1:length(beta_values), b_risk_val, 'k-o', 'LineWidth', 2.0, 'MarkerSize', 8, 'MarkerFaceColor', 'y'); 
         % [修改] 坐标轴标签大字号加粗
-        ylabel('CVaR 潜在违约风险 (MW)', 'FontSize', 20, 'FontWeight', 'bold'); 
+        ylabel('CVaR 潜在违约风险/元', 'FontSize', 20, 'FontWeight', 'bold'); 
         for i = 1:length(b_risk_val)
             % [修改] 数值标签字号调整为 16
             text(i, b_risk_val(i), sprintf('%.2f', b_risk_val(i)), ...
@@ -173,7 +173,8 @@ function strategies = run_scenario_B_tly(beta_values, Max_Iter, N_scenarios, N_b
         % [修改] 横坐标标签大字号加粗
         xlabel('风险厌恶系数 \beta', 'FontSize', 20, 'FontWeight', 'bold');
         % [修改] 图例大字号
-        legend({'聚合体 (AC+EV)', '备用 (Gen+Shed)', '潜在违约风险 (CVaR)'}, 'Location', 'best', 'FontSize', 18);
+        legend({'聚合体 (AC+EV)', '备用', '潜在违约风险 (CVaR)'}, ...
+       'Location', 'SouthOutside', 'Orientation', 'horizontal', 'FontSize', 16);
         
         % [修改] 去除网格线
         % grid on; % 已注释

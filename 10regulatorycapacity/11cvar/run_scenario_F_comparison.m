@@ -189,7 +189,7 @@ function run_scenario_F_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
     b_risk.CData(1,:) = [0.8 0.3 0.3]; % 红
     b_risk.CData(2,:) = [0.3 0.6 0.3]; % 绿
     
-    ylabel('CVaR(MW)', 'FontName', font_name, 'FontSize', font_size);
+    ylabel('CVaR(元)', 'FontName', font_name, 'FontSize', font_size);
     set(gca, 'XTickLabel', {'未协同', '协同'}, 'FontName', font_name, 'FontSize', font_size);
     grid on; box on;
     
