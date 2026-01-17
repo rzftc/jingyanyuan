@@ -3,7 +3,6 @@ function run_scenario_G_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
     Reliable_AC_Up, Reliable_EV_Up, Reliable_AC_Down, Reliable_EV_Down, ... 
     Reliable_AC_Base, Reliable_EV_Base, ... 
     R_Gen_Max, R_Shed_Max, cost_params, net_params, direction_signal, options)
-
     fprintf('\n==========================================================\n');
     fprintf('>>> 场景 G: 确定性 vs 随机优化 效益对比分析 <<<\n');
     fprintf('==========================================================\n');
@@ -11,7 +10,6 @@ function run_scenario_G_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
     
     % [修改 1] 定义统一的违约惩罚价格 (元/MW)，用于统一量纲
     rho_price = 150000; 
-
     %% 1. 运行确定性优化 (Deterministic Dispatch)
     conservative_factor = 1; 
     
@@ -97,34 +95,33 @@ function run_scenario_G_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
     
     yyaxis left
     b1 = bar([1, 2], [cost_det, cost_stoch], 0.4, 'FaceColor', [0.2 0.6 0.8]);
-    ylabel('运行成本 (元)', 'FontSize', 13);
+    ylabel('运行成本 (元)', 'FontSize', 16); % 字号 13 -> 16
     ylim([min(cost_det, cost_stoch)*0.8, max(cost_det, cost_stoch)*1.1]);
     
-    text(1, cost_det, sprintf('%.0f', cost_det), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 12, 'FontWeight', 'bold');
-    text(2, cost_stoch, sprintf('%.0f', cost_stoch), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 12, 'FontWeight', 'bold');
+    text(1, cost_det, sprintf('%.0f', cost_det), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 15, 'FontWeight', 'bold'); % 字号 12 -> 15
+    text(2, cost_stoch, sprintf('%.0f', cost_stoch), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 15, 'FontWeight', 'bold'); % 字号 12 -> 15
     
     yyaxis right
     % [修改 5] 绘图数据使用 cvar_det_cost (元)
     b2 = bar([1.4, 2.4], [cvar_det_cost, cvar_stoch], 0.4, 'FaceColor', [0.8 0.3 0.3]);
     % [修改 6] Y轴标签改为“风险成本 (元)”
-    ylabel('CVaR 风险成本 (元)', 'FontSize', 13);
+    ylabel('CVaR 风险成本 (元)', 'FontSize', 16); % 字号 13 -> 16
     ylim([0, max(cvar_det_cost, cvar_stoch)*1.5]); 
     
-    text(1.4, cvar_det_cost, sprintf('%.2f', cvar_det_cost), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 12, 'Color', 'r');
-    text(2.4, cvar_stoch, sprintf('%.2f', cvar_stoch), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 12, 'Color', 'r');
+    text(1.4, cvar_det_cost, sprintf('%.2f', cvar_det_cost), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 15, 'Color', 'r'); % 字号 12 -> 15
+    text(2.4, cvar_stoch, sprintf('%.2f', cvar_stoch), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 15, 'Color', 'r'); % 字号 12 -> 15
     
-    set(gca, 'XTick', [1.2, 2.2], 'XTickLabel', {'确定性优化', '随机优化'}, 'FontSize', 11);
-    legend({'运行成本', 'CVaR 风险成本'}, 'Location', 'north', 'Orientation', 'horizontal');
-    grid on;
+    set(gca, 'XTick', [1.2, 2.2], 'XTickLabel', {'确定性优化', '随机优化'}, 'FontSize', 14); % 字号 11 -> 14
+    legend({'运行成本', 'CVaR 风险成本'}, 'Location', 'north', 'Orientation', 'horizontal', 'FontSize', 14); % 增加图例字号
+    % grid on; % 已移除网格线
     
     print(fig, '场景G_确定性与随机优化对比.png', '-dpng', '-r600');
     fprintf('  > 已保存对比图: 场景G_确定性与随机优化对比.png\n');
-
-    % ================= [以下部分保持不变] =================
+    
+    % ================= [以下部分保持不变，仅修改绘图样式] =================
     t_vector = 8 : dt : (8 + (T_steps-1)*dt);
     dir_sign = sign(direction_signal);
     dir_sign(dir_sign == 0) = 1;
-
     P_Reg_AC_Det = st_det.P_AC .* dir_sign;
     P_Reg_EV_Det = st_det.P_EV .* dir_sign;
     P_Reg_Sum_Det = P_Reg_AC_Det + P_Reg_EV_Det;
@@ -132,11 +129,10 @@ function run_scenario_G_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
     P_Reg_AC_Stoch = st_stoch.P_AC .* dir_sign;
     P_Reg_EV_Stoch = st_stoch.P_EV .* dir_sign;
     P_Reg_Sum_Stoch = P_Reg_AC_Stoch + P_Reg_EV_Stoch;
-
     P_Tot_Sum_Det = (Reliable_AC_Base + Reliable_EV_Base) + P_Reg_Sum_Det;
     P_Tot_Sum_Stoch = (Reliable_AC_Base + Reliable_EV_Base) + P_Reg_Sum_Stoch;
     P_Tot_Base = Reliable_AC_Base + Reliable_EV_Base;
-
+    
     % --- 图 G2：AC与EV聚合体总功率对比 ---
     fig2 = figure('Name', 'AC与EV聚合体总功率对比', 'Color', 'w', 'Position', [150, 150, 700, 400]);
     hold on;
@@ -144,17 +140,17 @@ function run_scenario_G_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
     plot(t_vector, P_Tot_Sum_Det, 'b-', 'LineWidth', 1.5, 'DisplayName', '总功率 (确定性优化)');
     plot(t_vector, P_Tot_Sum_Stoch, 'r-', 'LineWidth', 2.0, 'DisplayName', '总功率 (随机优化)');
     
-    ylabel('总功率 (MW)', 'FontName', 'Microsoft YaHei', 'FontSize', 16);
-    xlabel('时刻', 'FontName', 'Microsoft YaHei', 'FontSize', 16);
+    ylabel('总功率 (MW)', 'FontName', 'Microsoft YaHei', 'FontSize', 19); % 字号 16 -> 19
+    xlabel('时刻', 'FontName', 'Microsoft YaHei', 'FontSize', 19); % 字号 16 -> 19
     xlim([8, 32]);
     set(gca, 'XTick', [8, 12, 16, 20, 24, 28, 32], ...
              'XTickLabel', {'08:00', '12:00', '16:00', '20:00', '00:00', '04:00', '08:00'}, ...
-             'FontName', 'Microsoft YaHei', 'FontSize', 13);
-    legend('Location', 'best', 'FontName', 'Microsoft YaHei');
-    grid on;
+             'FontName', 'Microsoft YaHei', 'FontSize', 16); % 字号 13 -> 16
+    legend('Location', 'best', 'FontName', 'Microsoft YaHei', 'FontSize', 15); % 增加图例字号
+    % grid on; % 已移除网格线
     print(fig2, '场景G_AC与EV聚合体总功率对比.png', '-dpng', '-r600');
     fprintf('  > 已保存对比图: 场景G_AC与EV聚合体总功率对比.png\n');
-
+    
     % --- 图 G3：AC与EV聚合体功率调节量对比 ---
     fig3 = figure('Name', 'AC与EV聚合体功率调节量对比', 'Color', 'w', 'Position', [200, 200, 700, 400]);
     hold on;
@@ -166,19 +162,17 @@ function run_scenario_G_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
     x_fill = [t_vector, fliplr(t_vector)];
     y_fill = [P_Reg_Sum_Det', fliplr(P_Reg_Sum_Stoch')];
     fill(x_fill, y_fill, [0.8 0.8 0.8], 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'DisplayName', '策略差异');
-
-    ylabel('功率调节量 (MW)', 'FontName', 'Microsoft YaHei', 'FontSize', 16);
-    xlabel('时刻', 'FontName', 'Microsoft YaHei', 'FontSize', 16);
+    ylabel('功率调节量 (MW)', 'FontName', 'Microsoft YaHei', 'FontSize', 19); % 字号 16 -> 19
+    xlabel('时刻', 'FontName', 'Microsoft YaHei', 'FontSize', 19); % 字号 16 -> 19
     xlim([8, 32]);
     set(gca, 'XTick', [8, 12, 16, 20, 24, 28, 32], ...
              'XTickLabel', {'08:00', '12:00', '16:00', '20:00', '00:00', '04:00', '08:00'}, ...
-             'FontName', 'Microsoft YaHei', 'FontSize', 13);
-    legend('Location', 'best', 'FontName', 'Microsoft YaHei');
-    grid on;
+             'FontName', 'Microsoft YaHei', 'FontSize', 16); % 字号 13 -> 16
+    legend('Location', 'best', 'FontName', 'Microsoft YaHei', 'FontSize', 15); % 增加图例字号
+    % grid on; % 已移除网格线
     print(fig3, '场景G_AC与EV聚合体功率调节量对比.png', '-dpng', '-r600');
     fprintf('  > 已保存对比图: 场景G_AC与EV聚合体功率调节量对比.png\n');
 end
-
 %% --- 辅助函数：计算运行成本 (保持不变) ---
 function c = calculate_operating_cost(st, p, dt)
     if length(p.c1_ac) > 1
@@ -193,7 +187,6 @@ function c = calculate_operating_cost(st, p, dt)
     term_shed = (p.c1_shed * st.P_Shed);
     c = sum((term_ac + term_ev + term_gen + term_shed) * dt);
 end
-
 %% --- 辅助函数：事后评估风险 (保持不变，计算出的仍为MW) ---
 function [cvar, risk_val] = evaluate_risk_post_hoc(P_AC, P_EV, S_AC, S_EV, beta, conf)
     [~, N_scenarios] = size(S_AC);
