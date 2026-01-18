@@ -409,8 +409,14 @@ fprintf('物理约束计算完成：线路最大背景潮流 %.2f MW\n', max(Max
 beta_values = [0, 1, 10]; 
 x_ticks_set = [8, 14, 20, 26, 32];
 x_labels_set = {'08:00', '14:00', '20:00', '02:00 (次日)', '08:00 (次日)'};
-options = optimoptions('quadprog', 'Display', 'off', 'Algorithm', 'interior-point-convex', 'TolFun', 1e-6);
+% options = optimoptions('quadprog', 'Display', 'off', 'Algorithm', 'interior-point-convex', 'TolFun', 1e-6);
 
+options = cplexoptimset('cplex'); 
+options.barrier.display = 0;  % 针对 Barrier 算法 (qpmethod=2) 关闭输出
+options.simplex.display = 0;  % 针对单纯形法关闭输出 (作为备用)
+options.sift.display = 0;     % 针对 Sifting 算法关闭输出
+options.read.scale = 1;      % 开启自动缩放，有助于防止数值问题
+options.qpmethod = 0;        % 0 = Automatic (让 CPLEX 自动选择单纯形法或内点法)
 %% ================= 5. 执行各个场景 =================
 
 %% 1. 运行场景 B: 风险偏好灵敏度分析
@@ -440,7 +446,7 @@ run_scenario_F_comparison(beta_for_comparison, 2, N_scenarios, N_bus, N_line, dt
     Effective_Reliable_AC, Effective_Reliable_EV, ... % <--- 注意：这里使用可靠边界！
     R_Gen_Max, R_Shed_Max, cost_params, net_params, direction_signal, 100, 100, options);
 %% 5. 运行场景 G: 确定性 vs 随机优化 效益对比分析
-beta_for_G = 10; 
+beta_for_G = 2.7; 
 
 run_scenario_G_comparison(beta_for_G, Max_Iter, N_scenarios, N_bus, N_line, dt, ...
     P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...

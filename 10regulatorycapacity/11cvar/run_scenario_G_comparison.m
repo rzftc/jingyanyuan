@@ -9,7 +9,7 @@ function run_scenario_G_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
     T_steps = length(P_grid_demand);
     
     % [修改 1] 定义统一的违约惩罚价格 (元/MW)，用于统一量纲
-    rho_price = 150000; 
+    rho_price = 120000; 
     %% 1. 运行确定性优化 (Deterministic Dispatch)
     conservative_factor = 1; 
     
@@ -58,7 +58,8 @@ function run_scenario_G_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
     end
     
     % 求解
-    [x_opt, ~, exitflag] = quadprog(H, f, A, b, Aeq, beq, lb, ub, [], options);
+    % [x_opt, ~, exitflag] = quadprog(H, f, A, b, Aeq, beq, lb, ub, [], options);
+    [x_opt, ~, exitflag] = cplexqp(H, f, A, b, Aeq, beq, lb, ub, [], options);
     
     if exitflag > 0
         st_stoch.P_AC = x_opt(info.idx_P_AC);
@@ -95,21 +96,21 @@ function run_scenario_G_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
     
     yyaxis left
     b1 = bar([1, 2], [cost_det, cost_stoch], 0.4, 'FaceColor', [0.2 0.6 0.8]);
-    ylabel('运行成本 (元)', 'FontSize', 16); % 字号 13 -> 16
+    ylabel('运行成本 (元)', 'FontSize', 15); % 字号 13 -> 16
     ylim([min(cost_det, cost_stoch)*0.8, max(cost_det, cost_stoch)*1.1]);
     
-    text(1, cost_det, sprintf('%.0f', cost_det), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 15, 'FontWeight', 'bold'); % 字号 12 -> 15
-    text(2, cost_stoch, sprintf('%.0f', cost_stoch), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 15, 'FontWeight', 'bold'); % 字号 12 -> 15
+    text(1, cost_det, sprintf('%.0f', cost_det), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 14, 'FontWeight', 'bold'); % 字号 12 -> 15
+    text(2, cost_stoch, sprintf('%.0f', cost_stoch), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 14, 'FontWeight', 'bold'); % 字号 12 -> 15
     
     yyaxis right
     % [修改 5] 绘图数据使用 cvar_det_cost (元)
     b2 = bar([1.4, 2.4], [cvar_det_cost, cvar_stoch], 0.4, 'FaceColor', [0.8 0.3 0.3]);
     % [修改 6] Y轴标签改为“风险成本 (元)”
-    ylabel('CVaR 风险成本 (元)', 'FontSize', 16); % 字号 13 -> 16
+    ylabel('CVaR 风险成本 (元)', 'FontSize', 15); % 字号 13 -> 16
     ylim([0, max(cvar_det_cost, cvar_stoch)*1.5]); 
     
-    text(1.4, cvar_det_cost, sprintf('%.2f', cvar_det_cost), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 15, 'Color', 'r'); % 字号 12 -> 15
-    text(2.4, cvar_stoch, sprintf('%.2f', cvar_stoch), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 15, 'Color', 'r'); % 字号 12 -> 15
+    text(1.4, cvar_det_cost, sprintf('%.2f', cvar_det_cost), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 14, 'Color', 'r'); % 字号 12 -> 15
+    text(2.4, cvar_stoch, sprintf('%.2f', cvar_stoch), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 14, 'Color', 'r'); % 字号 12 -> 15
     
     set(gca, 'XTick', [1.2, 2.2], 'XTickLabel', {'确定性优化', '随机优化'}, 'FontSize', 14); % 字号 11 -> 14
     legend({'运行成本', 'CVaR 风险成本'}, 'Location', 'north', 'Orientation', 'horizontal', 'FontSize', 14); % 增加图例字号

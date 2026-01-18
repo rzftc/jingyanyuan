@@ -70,8 +70,8 @@ function run_scenario_F_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
             end
             
             % 5. 求解
-            [x_opt, ~, exitflag] = quadprog(H, f, A, b, Aeq, beq, lb, ub, [], options);
-            
+            % [x_opt, ~, exitflag] = quadprog(H, f, A, b, Aeq, beq, lb, ub, [], options);
+            [x_opt, ~, exitflag] = cplexqp(H, f, A, b, Aeq, beq, lb, ub, [], options);
             if exitflag > 0
                 P_AC_curr = x_opt(info.idx_P_AC);
                 P_EV_curr = x_opt(info.idx_P_EV);

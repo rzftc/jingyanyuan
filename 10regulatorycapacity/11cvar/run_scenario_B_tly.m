@@ -65,9 +65,12 @@ function strategies = run_scenario_B_tly(beta_values, Max_Iter, N_scenarios, N_b
                 f(info.idx_P_EV) = f(info.idx_P_EV) + (lambda_Rho * (P_AC_prev - Mean_AC) * dt);
             end
             
-            [x_opt, ~, exitflag] = quadprog(H, f, A, b, Aeq, beq, lb, ub, [], options);
             
+         % [x_opt, ~, exitflag] = quadprog(H, f, A, b, Aeq, beq, lb, ub, [], options);
+         [x_opt, ~, exitflag] = cplexqp(H, f, A, b, Aeq, beq, lb, ub, [], options);
+           
             if exitflag > 0
+            
                 P_AC_curr = x_opt(info.idx_P_AC);
                 P_EV_curr = x_opt(info.idx_P_EV);
                 P_Gen_curr = x_opt(info.idx_P_Gen);

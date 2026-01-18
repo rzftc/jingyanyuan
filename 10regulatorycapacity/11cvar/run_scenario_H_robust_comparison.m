@@ -43,8 +43,8 @@ function run_scenario_H_robust_comparison(beta_val, N_scenarios, N_bus, N_line, 
     end
     
     % 1.5 求解鲁棒模型
-    [x_rob, ~, exitflag_rob] = quadprog(H_r, f_r, A_r, b_r, Aeq_r, beq_r, lb_r, ub_r, [], options);
-    
+    % [x_rob, ~, exitflag_rob] = quadprog(H_r, f_r, A_r, b_r, Aeq_r, beq_r, lb_r, ub_r, [], options);
+    [x_rob, ~, exitflag_rob] = cplexqp(H_r, f_r, A_r, b_r, Aeq_r, beq_r, lb_r, ub_r, [], options);
     if exitflag_rob > 0
         st_rob.P_AC = x_rob(info_r.idx_P_AC);
         st_rob.P_EV = x_rob(info_r.idx_P_EV);

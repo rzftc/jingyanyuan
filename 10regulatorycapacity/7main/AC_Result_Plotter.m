@@ -9,9 +9,9 @@
 
 clear; close all; clc;
 
-% 设置默认字体为支持中文的字体 (防止乱码)
-set(0, 'DefaultAxesFontName', 'Microsoft YaHei'); 
-set(0, 'DefaultTextFontName', 'Microsoft YaHei');
+% [已修改] 恢复默认字体设置，移除强制指定 'Microsoft YaHei' 的代码
+% set(0, 'DefaultAxesFontName', 'Microsoft YaHei'); 
+% set(0, 'DefaultTextFontName', 'Microsoft YaHei');
 
 %% === 第一部分：单次仿真结果绘图 ===
 

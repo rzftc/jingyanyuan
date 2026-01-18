@@ -47,8 +47,8 @@ function run_scenario_E_tly(P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
         for idx = idx_pow, H(idx, idx) = H(idx, idx) * dt; end
         f(idx_pow) = f(idx_pow) * dt;
         
-        [x_opt, ~, exitflag] = quadprog(H, f, A, b, Aeq, beq, lb, ub, [], options);
-        
+        % [x_opt, ~, exitflag] = quadprog(H, f, A, b, Aeq, beq, lb, ub, [], options);
+        [x_opt, ~, exitflag] = cplexqp(H, f, A, b, Aeq, beq, lb, ub, [], options);
         if exitflag > 0
             P_AC_curr = x_opt(info.idx_P_AC); P_EV_curr = x_opt(info.idx_P_EV);
             P_Gen_curr = x_opt(info.idx_P_Gen); P_Shed_curr = x_opt(info.idx_P_Shed);
