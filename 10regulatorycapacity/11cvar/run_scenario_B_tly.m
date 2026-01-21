@@ -68,7 +68,7 @@ function strategies = run_scenario_B_tly(beta_values, Max_Iter, N_scenarios, N_b
             
          % [x_opt, ~, exitflag] = quadprog(H, f, A, b, Aeq, beq, lb, ub, [], options);
          [x_opt, ~, exitflag] = cplexqp(H, f, A, b, Aeq, beq, lb, ub, [], options);
-           
+            
             if exitflag > 0
             
                 P_AC_curr = x_opt(info.idx_P_AC);
@@ -145,6 +145,12 @@ function strategies = run_scenario_B_tly(beta_values, Max_Iter, N_scenarios, N_b
         b(1).FaceColor = [0.2 0.6 0.8]; % 蓝色系：聚合体
         b(2).FaceColor = [0.8 0.3 0.3]; % 红色系：备用资源
         
+        % [修改] 增加Y轴高度以容纳顶部图例
+        max_y_left = max(data_to_plot(:));
+        if ~isnan(max_y_left)
+             ylim([0, max_y_left * 1.25]); % 上限增加25%
+        end
+
         % [修改] 坐标轴标签大字号加粗
         ylabel('调度能量 (MWh)', 'FontSize', 20, 'FontWeight', 'bold'); 
         % [修改] 坐标轴刻度大字号，框线加粗
@@ -164,6 +170,14 @@ function strategies = run_scenario_B_tly(beta_values, Max_Iter, N_scenarios, N_b
         
         yyaxis right; 
         plot(1:length(beta_values), b_risk_val, 'k-o', 'LineWidth', 2.0, 'MarkerSize', 8, 'MarkerFaceColor', 'y'); 
+        
+        % [修改] 增加右侧Y轴高度以容纳顶部图例
+        max_y_right = max(b_risk_val);
+        if ~isnan(max_y_right)
+            cur_ylim_right = ylim;
+            ylim([cur_ylim_right(1), max_y_right * 1.25]); % 上限增加25%
+        end
+
         % [修改] 坐标轴标签大字号加粗
         ylabel('CVaR 潜在违约风险/元', 'FontSize', 20, 'FontWeight', 'bold'); 
         for i = 1:length(b_risk_val)
@@ -175,9 +189,10 @@ function strategies = run_scenario_B_tly(beta_values, Max_Iter, N_scenarios, N_b
         
         % [修改] 横坐标标签大字号加粗
         xlabel('风险厌恶系数 \beta', 'FontSize', 20, 'FontWeight', 'bold');
-        % [修改] 图例大字号
+        
+        % [修改] 图例放置在上方内部 (North)，并水平排列
         legend({'聚合体 (AC+EV)', '备用', '潜在违约风险 (CVaR)'}, ...
-       'Location', 'SouthOutside', 'Orientation', 'horizontal', 'FontSize', 16);
+        'Location', 'North', 'Orientation', 'horizontal', 'FontSize', 16);
         
         % [修改] 去除网格线
         % grid on; % 已注释

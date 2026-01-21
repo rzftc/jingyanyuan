@@ -420,7 +420,8 @@ options.qpmethod = 0;        % 0 = Automatic (让 CPLEX 自动选择单纯形法
 %% ================= 5. 执行各个场景 =================
 
 %% 1. 运行场景 B: 风险偏好灵敏度分析
-strategies = run_scenario_B_tly(beta_values, Max_Iter, N_scenarios, N_bus, N_line, dt, ...
+beta_values_b = [0, 1, 5,10,15]; 
+strategies = run_scenario_B_tly(beta_values_b, Max_Iter, N_scenarios, N_bus, N_line, dt, ...
     P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, Effective_Reliable_AC, Effective_Reliable_EV, ...
     R_Gen_Max, R_Shed_Max, cost_params, net_params, direction_signal, lambda_SDCI, lambda_Rho, options);
 

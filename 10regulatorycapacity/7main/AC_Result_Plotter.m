@@ -374,7 +374,8 @@ if exist(results_dir, 'dir')
                 for i = 1:length(data_list)
                     if ~isempty(data_list(i).total_power)
                         plot(data_list(i).time_points, data_list(i).total_power, 'LineWidth', 1.5, 'Color', colors_multi(i,:));
-                        legend_str{end+1} = sprintf('激励电价 = %.1f 分/kW', data_list(i).price);
+                        % [修改] 转换为元，并简化图例
+                        legend_str{end+1} = sprintf('%.2f 元/kW', data_list(i).price / 100);
                     end
                 end
                 hold off;
@@ -394,7 +395,8 @@ if exist(results_dir, 'dir')
                 for i = 1:length(data_list)
                     if ~isempty(data_list(i).up_potential)
                         plot(data_list(i).time_points, data_list(i).up_potential, 'LineWidth', 1.5, 'Color', colors_multi(i,:));
-                        legend_str_up{end+1} = sprintf('激励电价 = %.1f 分/kW', data_list(i).price);
+                        % [修改] 转换为元，并简化图例
+                        legend_str_up{end+1} = sprintf('%.2f 元/kW', data_list(i).price / 100);
                     end
                 end
                 hold off;
@@ -414,7 +416,8 @@ if exist(results_dir, 'dir')
                 for i = 1:length(data_list)
                     if ~isempty(data_list(i).down_potential)
                         plot(data_list(i).time_points, data_list(i).down_potential, 'LineWidth', 1.5, 'Color', colors_multi(i,:));
-                        legend_str_down{end+1} = sprintf('激励电价 = %.1f 分/kW', data_list(i).price);
+                        % [修改] 转换为元，并简化图例
+                        legend_str_down{end+1} = sprintf('%.2f 元/kW', data_list(i).price / 100);
                     end
                 end
                 hold off;
@@ -443,9 +446,11 @@ if exist(results_dir, 'dir')
             max_powers_for_curve = max_powers_for_curve(sort_idx);
             
             figure('Position', [300 300 800 500]);
-            plot(prices_for_curve, max_powers_for_curve, 'bo-', 'LineWidth', 2, 'MarkerSize', 8, 'MarkerFaceColor', 'b');
+            % [修改] X轴除以100 (转换为元)
+            plot(prices_for_curve / 100, max_powers_for_curve, 'bo-', 'LineWidth', 2, 'MarkerSize', 8, 'MarkerFaceColor', 'b');
             % 字体放大
-            xlabel('激励电价 (分/kW)', 'FontSize', 20);
+            % [修改] 标签单位更改为 元/kW
+            xlabel('激励电价 (元/kW)', 'FontSize', 20);
             ylabel('聚合整体功率峰值 (kW)', 'FontSize', 20);
             grid on; set(gca, 'FontSize', 16);
             print(gcf, '图11_AC激励价格-聚合整体功率特性.png', '-dpng', '-r300');
