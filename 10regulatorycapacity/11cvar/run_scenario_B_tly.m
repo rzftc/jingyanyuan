@@ -65,9 +65,62 @@ function strategies = run_scenario_B_tly(beta_values, Max_Iter, N_scenarios, N_b
                 f(info.idx_P_EV) = f(info.idx_P_EV) + (lambda_Rho * (P_AC_prev - Mean_AC) * dt);
             end
             
+            % --- 【修改开始】使用 Cplex 类对象进行求解 ---
+            % 实例化 CPLEX 对象
+            cplex = Cplex('ScenarioB');
+            cplex.Model.sense = 'minimize';
             
-         % [x_opt, ~, exitflag] = quadprog(H, f, A, b, Aeq, beq, lb, ub, [], options);
-         [x_opt, ~, exitflag] = cplexqp(H, f, A, b, Aeq, beq, lb, ub, [], options);
+            % 设置目标函数 (1/2 * x' * Q * x + f' * x)
+            cplex.Model.Q = H;
+            cplex.Model.obj = f;
+            
+            % 设置变量边界
+            cplex.Model.lb = lb;
+            cplex.Model.ub = ub;
+            
+            % 设置约束 (不等式 A*x <= b 和 等式 Aeq*x = beq)
+            % CPLEX 类使用 lhs <= A*x <= rhs 的形式
+            % 不等式约束转换: -inf <= A*x <= b
+            % 等式约束转换:   beq  <= Aeq*x <= beq
+            if isempty(A)
+                A_combined = Aeq;
+                lhs = beq;
+                rhs = beq;
+            elseif isempty(Aeq)
+                A_combined = A;
+                lhs = -inf(size(b));
+                rhs = b;
+            else
+                A_combined = [A; Aeq];
+                lhs = [-inf(size(b)); beq];
+                rhs = [b; beq];
+            end
+            cplex.Model.A = A_combined;
+            cplex.Model.lhs = lhs;
+            cplex.Model.rhs = rhs;
+            
+            % 设置参数 (关闭输出，对应 options.Display = 'off')
+            cplex.DisplayFunc = []; 
+            % 如果 options 中有其他参数 (如算法选择)，可在此处通过 cplex.Param 设置
+            
+            % 求解
+            cplex.solve();
+            
+            % 提取结果和状态
+            if isfield(cplex.Solution, 'x') && ~isempty(cplex.Solution.x)
+                x_opt = cplex.Solution.x;
+                status = cplex.Solution.status;
+                % CPLEX status 1 = Optimal, 101/102 = Optimal with tolerance
+                if status == 1 || status == 101 || status == 102
+                    exitflag = 1;
+                else
+                    exitflag = -2;
+                end
+            else
+                x_opt = [];
+                exitflag = -2;
+            end
+            % --- 【修改结束】 ---
             
             if exitflag > 0
             

@@ -42,9 +42,50 @@ function run_scenario_H_robust_comparison(beta_val, N_scenarios, N_bus, N_line, 
         end
     end
     
-    % 1.5 求解鲁棒模型
-    % [x_rob, ~, exitflag_rob] = quadprog(H_r, f_r, A_r, b_r, Aeq_r, beq_r, lb_r, ub_r, [], options);
-    [x_rob, ~, exitflag_rob] = cplexqp(H_r, f_r, A_r, b_r, Aeq_r, beq_r, lb_r, ub_r, [], options);
+    % 1.5 求解鲁棒模型 (修改部分：使用 Cplex 类对象)
+    % -----------------------------------------------------------
+    cplex_r = Cplex('ScenarioH_Robust');
+    cplex_r.Model.sense = 'minimize';
+    
+    cplex_r.Model.Q = H_r;
+    cplex_r.Model.obj = f_r;
+    cplex_r.Model.lb = lb_r;
+    cplex_r.Model.ub = ub_r;
+    
+    if isempty(A_r)
+        A_comb_r = Aeq_r;
+        lhs_r = beq_r;
+        rhs_r = beq_r;
+    elseif isempty(Aeq_r)
+        A_comb_r = A_r;
+        lhs_r = -inf(size(b_r));
+        rhs_r = b_r;
+    else
+        A_comb_r = [A_r; Aeq_r];
+        lhs_r = [-inf(size(b_r)); beq_r];
+        rhs_r = [b_r; beq_r];
+    end
+    cplex_r.Model.A = A_comb_r;
+    cplex_r.Model.lhs = lhs_r;
+    cplex_r.Model.rhs = rhs_r;
+    
+    cplex_r.DisplayFunc = []; 
+    cplex_r.solve();
+    
+    if isfield(cplex_r.Solution, 'x') && ~isempty(cplex_r.Solution.x)
+        x_rob = cplex_r.Solution.x;
+        status = cplex_r.Solution.status;
+        if status == 1 || status == 101 || status == 102
+            exitflag_rob = 1;
+        else
+            exitflag_rob = -2;
+        end
+    else
+        x_rob = [];
+        exitflag_rob = -2;
+    end
+    % -----------------------------------------------------------
+
     if exitflag_rob > 0
         st_rob.P_AC = x_rob(info_r.idx_P_AC);
         st_rob.P_EV = x_rob(info_r.idx_P_EV);
@@ -86,8 +127,49 @@ function run_scenario_H_robust_comparison(beta_val, N_scenarios, N_bus, N_line, 
         end
     end
     
-    % 2.5 求解CVaR模型
-    [x_cvar, ~, exitflag_cvar] = quadprog(H_c, f_c, A_c, b_c, Aeq_c, beq_c, lb_c, ub_c, [], options);
+    % 2.5 求解CVaR模型 (修改部分：使用 Cplex 类对象)
+    % -----------------------------------------------------------
+    cplex_c = Cplex('ScenarioH_CVaR');
+    cplex_c.Model.sense = 'minimize';
+    
+    cplex_c.Model.Q = H_c;
+    cplex_c.Model.obj = f_c;
+    cplex_c.Model.lb = lb_c;
+    cplex_c.Model.ub = ub_c;
+    
+    if isempty(A_c)
+        A_comb_c = Aeq_c;
+        lhs_c = beq_c;
+        rhs_c = beq_c;
+    elseif isempty(Aeq_c)
+        A_comb_c = A_c;
+        lhs_c = -inf(size(b_c));
+        rhs_c = b_c;
+    else
+        A_comb_c = [A_c; Aeq_c];
+        lhs_c = [-inf(size(b_c)); beq_c];
+        rhs_c = [b_c; beq_c];
+    end
+    cplex_c.Model.A = A_comb_c;
+    cplex_c.Model.lhs = lhs_c;
+    cplex_c.Model.rhs = rhs_c;
+    
+    cplex_c.DisplayFunc = []; 
+    cplex_c.solve();
+    
+    if isfield(cplex_c.Solution, 'x') && ~isempty(cplex_c.Solution.x)
+        x_cvar = cplex_c.Solution.x;
+        status = cplex_c.Solution.status;
+        if status == 1 || status == 101 || status == 102
+            exitflag_cvar = 1;
+        else
+            exitflag_cvar = -2;
+        end
+    else
+        x_cvar = [];
+        exitflag_cvar = -2;
+    end
+    % -----------------------------------------------------------
     
     if exitflag_cvar > 0
         st_cvar.P_AC = x_cvar(info_c.idx_P_AC);

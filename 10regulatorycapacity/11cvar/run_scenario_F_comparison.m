@@ -69,9 +69,52 @@ function run_scenario_F_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
                 f(info.idx_P_EV) = f(info.idx_P_EV) + (l_rho * (P_AC_prev - Mean_AC) * dt);
             end
             
-            % 5. 求解
-            % [x_opt, ~, exitflag] = quadprog(H, f, A, b, Aeq, beq, lb, ub, [], options);
-            [x_opt, ~, exitflag] = cplexqp(H, f, A, b, Aeq, beq, lb, ub, [], options);
+            % 5. 求解 (修改部分：使用 Cplex 类对象)
+            % -----------------------------------------------------------
+            cplex = Cplex('ScenarioF');
+            cplex.Model.sense = 'minimize';
+            
+            cplex.Model.Q = H;
+            cplex.Model.obj = f;
+            cplex.Model.lb = lb;
+            cplex.Model.ub = ub;
+            
+            % 处理约束 A*x <= b 和 Aeq*x = beq
+            if isempty(A)
+                A_combined = Aeq;
+                lhs = beq;
+                rhs = beq;
+            elseif isempty(Aeq)
+                A_combined = A;
+                lhs = -inf(size(b));
+                rhs = b;
+            else
+                A_combined = [A; Aeq];
+                lhs = [-inf(size(b)); beq];
+                rhs = [b; beq];
+            end
+            cplex.Model.A = A_combined;
+            cplex.Model.lhs = lhs;
+            cplex.Model.rhs = rhs;
+            
+            cplex.DisplayFunc = []; % 关闭输出
+            
+            cplex.solve();
+            
+            if isfield(cplex.Solution, 'x') && ~isempty(cplex.Solution.x)
+                x_opt = cplex.Solution.x;
+                status = cplex.Solution.status;
+                if status == 1 || status == 101 || status == 102
+                    exitflag = 1;
+                else
+                    exitflag = -2;
+                end
+            else
+                x_opt = [];
+                exitflag = -2;
+            end
+            % -----------------------------------------------------------
+
             if exitflag > 0
                 P_AC_curr = x_opt(info.idx_P_AC);
                 P_EV_curr = x_opt(info.idx_P_EV);
@@ -139,7 +182,6 @@ function run_scenario_F_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
     xlabel('时间步', 'FontName', font_name, 'FontSize', font_size); 
     ylabel('功率(MW)', 'FontName', font_name, 'FontSize', font_size);
     legend([h_ac, h_tot], {'P_{AC} (协同)', 'P_{Total} (协同)'}, 'Location', 'northwest', 'FontName', font_name);
-    % 注意：这里不再设置 title
     grid on; box on;
     set(gca, 'FontName', font_name, 'FontSize', font_size);
     
@@ -151,8 +193,7 @@ function run_scenario_F_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
     % --- 图 2: 物理指标对比 (峰值 & 波动率) ---
     fig2 = figure('Name', 'F_Physical_Metrics', 'Color', 'w', 'Position', [150, 150, 500, 400]);
     
-    % 数据准备 (为了显示效果，波动率放大10倍显示，或者使用双Y轴，这里采用归一化对比更清晰)
-    % 这里直接画原始值
+    % 数据准备
     data_phy = [results(1).Max_Peak, results(2).Max_Peak; 
                 results(1).Std_Dev*10, results(2).Std_Dev*10]; % 波动率x10以便同框
     
@@ -200,14 +241,10 @@ function run_scenario_F_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
     text(xt(2), yt(2), sprintf('%.4f', yt(2)), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 12, 'FontName', font_name);
     
     % 增加下降箭头或文字说明
-    reduction = (results(1).CVaR - results(2).CVaR);
     mid_x = mean(xt);
-    mid_y = max(yt) * 1.1;
-    % line([xt(1), xt(2)], [max(yt)*1.05, max(yt)*1.05], 'Color', 'k');
     text(mid_x, max(yt)*0.5, sprintf('风险减小\n-%.1f%%', imp_cvar), 'HorizontalAlignment', 'center', 'Color', 'b', 'FontWeight', 'bold', 'FontName', font_name);
     
     % 保存 图3
     print(fig3, '场景F风险对比.png', '-dpng', '-r600');
     print(fig3, '场景F风险对比.emf', '-dmeta');
-    
 end

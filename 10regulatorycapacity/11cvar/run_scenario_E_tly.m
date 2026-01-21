@@ -47,8 +47,60 @@ function run_scenario_E_tly(P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
         for idx = idx_pow, H(idx, idx) = H(idx, idx) * dt; end
         f(idx_pow) = f(idx_pow) * dt;
         
-        % [x_opt, ~, exitflag] = quadprog(H, f, A, b, Aeq, beq, lb, ub, [], options);
-        [x_opt, ~, exitflag] = cplexqp(H, f, A, b, Aeq, beq, lb, ub, [], options);
+        % --- 【修改开始】使用 Cplex 类对象进行求解 ---
+        % 实例化 CPLEX 对象
+        cplex = Cplex('ScenarioE');
+        cplex.Model.sense = 'minimize';
+
+        % 设置目标函数
+        cplex.Model.Q = H;
+        cplex.Model.obj = f;
+
+        % 设置变量边界
+        cplex.Model.lb = lb;
+        cplex.Model.ub = ub;
+
+        % 设置约束 (不等式 A*x <= b 和 等式 Aeq*x = beq)
+        % 转换为 CPLEX 类的 lhs <= A*x <= rhs 形式
+        if isempty(A)
+            A_combined = Aeq;
+            lhs = beq;
+            rhs = beq;
+        elseif isempty(Aeq)
+            A_combined = A;
+            lhs = -inf(size(b));
+            rhs = b;
+        else
+            A_combined = [A; Aeq];
+            lhs = [-inf(size(b)); beq];
+            rhs = [b; beq];
+        end
+        cplex.Model.A = A_combined;
+        cplex.Model.lhs = lhs;
+        cplex.Model.rhs = rhs;
+
+        % 设置参数 (关闭输出)
+        cplex.DisplayFunc = []; 
+
+        % 求解
+        cplex.solve();
+
+        % 提取结果和状态
+        if isfield(cplex.Solution, 'x') && ~isempty(cplex.Solution.x)
+            x_opt = cplex.Solution.x;
+            status = cplex.Solution.status;
+            % CPLEX status 1 = Optimal, 101/102 = Optimal with tolerance
+            if status == 1 || status == 101 || status == 102
+                exitflag = 1;
+            else
+                exitflag = -2;
+            end
+        else
+            x_opt = [];
+            exitflag = -2;
+        end
+        % --- 【修改结束】 ---
+
         if exitflag > 0
             P_AC_curr = x_opt(info.idx_P_AC); P_EV_curr = x_opt(info.idx_P_EV);
             P_Gen_curr = x_opt(info.idx_P_Gen); P_Shed_curr = x_opt(info.idx_P_Shed);

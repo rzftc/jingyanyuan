@@ -57,9 +57,51 @@ function run_scenario_G_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
         end
     end
     
-    % 求解
-    % [x_opt, ~, exitflag] = quadprog(H, f, A, b, Aeq, beq, lb, ub, [], options);
-    [x_opt, ~, exitflag] = cplexqp(H, f, A, b, Aeq, beq, lb, ub, [], options);
+    % 求解 (修改部分：使用 Cplex 类对象)
+    % -----------------------------------------------------------
+    cplex = Cplex('ScenarioG');
+    cplex.Model.sense = 'minimize';
+    
+    cplex.Model.Q = H;
+    cplex.Model.obj = f;
+    cplex.Model.lb = lb;
+    cplex.Model.ub = ub;
+    
+    % 处理约束
+    if isempty(A)
+        A_combined = Aeq;
+        lhs = beq;
+        rhs = beq;
+    elseif isempty(Aeq)
+        A_combined = A;
+        lhs = -inf(size(b));
+        rhs = b;
+    else
+        A_combined = [A; Aeq];
+        lhs = [-inf(size(b)); beq];
+        rhs = [b; beq];
+    end
+    cplex.Model.A = A_combined;
+    cplex.Model.lhs = lhs;
+    cplex.Model.rhs = rhs;
+    
+    cplex.DisplayFunc = []; 
+    
+    cplex.solve();
+    
+    if isfield(cplex.Solution, 'x') && ~isempty(cplex.Solution.x)
+        x_opt = cplex.Solution.x;
+        status = cplex.Solution.status;
+        if status == 1 || status == 101 || status == 102
+            exitflag = 1;
+        else
+            exitflag = -2;
+        end
+    else
+        x_opt = [];
+        exitflag = -2;
+    end
+    % -----------------------------------------------------------
     
     if exitflag > 0
         st_stoch.P_AC = x_opt(info.idx_P_AC);
@@ -96,25 +138,24 @@ function run_scenario_G_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
     
     yyaxis left
     b1 = bar([1, 2], [cost_det, cost_stoch], 0.4, 'FaceColor', [0.2 0.6 0.8]);
-    ylabel('运行成本 (元)', 'FontSize', 15); % 字号 13 -> 16
+    ylabel('运行成本 (元)', 'FontSize', 15); 
     ylim([min(cost_det, cost_stoch)*0.8, max(cost_det, cost_stoch)*1.1]);
     
-    text(1, cost_det, sprintf('%.0f', cost_det), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 14, 'FontWeight', 'bold'); % 字号 12 -> 15
-    text(2, cost_stoch, sprintf('%.0f', cost_stoch), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 14, 'FontWeight', 'bold'); % 字号 12 -> 15
+    text(1, cost_det, sprintf('%.0f', cost_det), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 14, 'FontWeight', 'bold');
+    text(2, cost_stoch, sprintf('%.0f', cost_stoch), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 14, 'FontWeight', 'bold');
     
     yyaxis right
     % [修改 5] 绘图数据使用 cvar_det_cost (元)
     b2 = bar([1.4, 2.4], [cvar_det_cost, cvar_stoch], 0.4, 'FaceColor', [0.8 0.3 0.3]);
     % [修改 6] Y轴标签改为“风险成本 (元)”
-    ylabel('CVaR 风险成本 (元)', 'FontSize', 15); % 字号 13 -> 16
+    ylabel('CVaR 风险成本 (元)', 'FontSize', 15); 
     ylim([0, max(cvar_det_cost, cvar_stoch)*1.5]); 
     
-    text(1.4, cvar_det_cost, sprintf('%.2f', cvar_det_cost), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 14, 'Color', 'r'); % 字号 12 -> 15
-    text(2.4, cvar_stoch, sprintf('%.2f', cvar_stoch), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 14, 'Color', 'r'); % 字号 12 -> 15
+    text(1.4, cvar_det_cost, sprintf('%.2f', cvar_det_cost), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 14, 'Color', 'r');
+    text(2.4, cvar_stoch, sprintf('%.2f', cvar_stoch), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 14, 'Color', 'r');
     
-    set(gca, 'XTick', [1.2, 2.2], 'XTickLabel', {'确定性优化', '随机优化'}, 'FontSize', 14); % 字号 11 -> 14
-    legend({'运行成本', 'CVaR 风险成本'}, 'Location', 'north', 'Orientation', 'horizontal', 'FontSize', 14); % 增加图例字号
-    % grid on; % 已移除网格线
+    set(gca, 'XTick', [1.2, 2.2], 'XTickLabel', {'确定性优化', '随机优化'}, 'FontSize', 14); 
+    legend({'运行成本', 'CVaR 风险成本'}, 'Location', 'north', 'Orientation', 'horizontal', 'FontSize', 14);
     
     print(fig, '场景G_确定性与随机优化对比.png', '-dpng', '-r600');
     fprintf('  > 已保存对比图: 场景G_确定性与随机优化对比.png\n');
@@ -141,14 +182,13 @@ function run_scenario_G_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
     plot(t_vector, P_Tot_Sum_Det, 'b-', 'LineWidth', 1.5, 'DisplayName', '总功率 (确定性优化)');
     plot(t_vector, P_Tot_Sum_Stoch, 'r-', 'LineWidth', 2.0, 'DisplayName', '总功率 (随机优化)');
     
-    ylabel('总功率 (MW)', 'FontName', 'Microsoft YaHei', 'FontSize', 19); % 字号 16 -> 19
-    xlabel('时刻', 'FontName', 'Microsoft YaHei', 'FontSize', 19); % 字号 16 -> 19
+    ylabel('总功率 (MW)', 'FontName', 'Microsoft YaHei', 'FontSize', 19); 
+    xlabel('时刻', 'FontName', 'Microsoft YaHei', 'FontSize', 19);
     xlim([8, 32]);
     set(gca, 'XTick', [8, 12, 16, 20, 24, 28, 32], ...
              'XTickLabel', {'08:00', '12:00', '16:00', '20:00', '00:00', '04:00', '08:00'}, ...
-             'FontName', 'Microsoft YaHei', 'FontSize', 16); % 字号 13 -> 16
-    legend('Location', 'best', 'FontName', 'Microsoft YaHei', 'FontSize', 15); % 增加图例字号
-    % grid on; % 已移除网格线
+             'FontName', 'Microsoft YaHei', 'FontSize', 16); 
+    legend('Location', 'best', 'FontName', 'Microsoft YaHei', 'FontSize', 15);
     print(fig2, '场景G_AC与EV聚合体总功率对比.png', '-dpng', '-r600');
     fprintf('  > 已保存对比图: 场景G_AC与EV聚合体总功率对比.png\n');
     
@@ -163,17 +203,17 @@ function run_scenario_G_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
     x_fill = [t_vector, fliplr(t_vector)];
     y_fill = [P_Reg_Sum_Det', fliplr(P_Reg_Sum_Stoch')];
     fill(x_fill, y_fill, [0.8 0.8 0.8], 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'DisplayName', '策略差异');
-    ylabel('功率调节量 (MW)', 'FontName', 'Microsoft YaHei', 'FontSize', 19); % 字号 16 -> 19
-    xlabel('时刻', 'FontName', 'Microsoft YaHei', 'FontSize', 19); % 字号 16 -> 19
+    ylabel('功率调节量 (MW)', 'FontName', 'Microsoft YaHei', 'FontSize', 19);
+    xlabel('时刻', 'FontName', 'Microsoft YaHei', 'FontSize', 19);
     xlim([8, 32]);
     set(gca, 'XTick', [8, 12, 16, 20, 24, 28, 32], ...
              'XTickLabel', {'08:00', '12:00', '16:00', '20:00', '00:00', '04:00', '08:00'}, ...
-             'FontName', 'Microsoft YaHei', 'FontSize', 16); % 字号 13 -> 16
-    legend('Location', 'best', 'FontName', 'Microsoft YaHei', 'FontSize', 15); % 增加图例字号
-    % grid on; % 已移除网格线
+             'FontName', 'Microsoft YaHei', 'FontSize', 16); 
+    legend('Location', 'best', 'FontName', 'Microsoft YaHei', 'FontSize', 15); 
     print(fig3, '场景G_AC与EV聚合体功率调节量对比.png', '-dpng', '-r600');
     fprintf('  > 已保存对比图: 场景G_AC与EV聚合体功率调节量对比.png\n');
 end
+
 %% --- 辅助函数：计算运行成本 (保持不变) ---
 function c = calculate_operating_cost(st, p, dt)
     if length(p.c1_ac) > 1
@@ -188,7 +228,8 @@ function c = calculate_operating_cost(st, p, dt)
     term_shed = (p.c1_shed * st.P_Shed);
     c = sum((term_ac + term_ev + term_gen + term_shed) * dt);
 end
-%% --- 辅助函数：事后评估风险 (保持不变，计算出的仍为MW) ---
+
+%% --- 辅助函数：事后评估风险 (保持不变) ---
 function [cvar, risk_val] = evaluate_risk_post_hoc(P_AC, P_EV, S_AC, S_EV, beta, conf)
     [~, N_scenarios] = size(S_AC);
     total_sched = P_AC + P_EV;
