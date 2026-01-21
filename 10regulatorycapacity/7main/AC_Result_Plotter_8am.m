@@ -207,12 +207,12 @@ if has_single_result
         xlim(ax2_sub, [t_zoom_start, t_zoom_end]);
         % Y轴范围略大于数据范围
         ylim(ax2_sub, [rect_y, rect_y + rect_height]);
-        
-        xlabel(ax2_sub, '时间', 'FontSize', 16, 'FontWeight', 'bold');
-        ylabel(ax2_sub, 'SOC', 'FontSize', 16, 'FontWeight', 'bold');
+        % 
+        % xlabel(ax2_sub, '时间', 'FontSize', 24, 'FontWeight', 'bold');
+        % ylabel(ax2_sub, 'SOC', 'FontSize', 24, 'FontWeight', 'bold');
         
         % 去掉上边框和右边框，刻度朝外
-        set(ax2_sub, 'FontSize', 14, 'Box', 'off', 'LineWidth', 1.5, 'TickDir', 'out');
+        set(ax2_sub, 'FontSize', 26, 'Box', 'off', 'LineWidth', 1.5, 'TickDir', 'out');
         
         % 去掉网格
         grid(ax2_sub, 'off');
@@ -499,7 +499,7 @@ if exist(results_dir, 'dir')
                 print(gcf, '图10_不同电价下AC下调能力对比.png', '-dpng', '-r300');
             end
 
-            % 图 11: 激励价格 vs 聚合整体功率特性曲线
+            % 图 11: 激励价格 vs 聚合整体功率特性曲线 (样式修改版)
             prices_for_curve = [data_list.price];
             max_powers_for_curve = zeros(size(prices_for_curve));
             for k = 1:length(data_list)
@@ -514,12 +514,15 @@ if exist(results_dir, 'dir')
             [prices_for_curve, sort_idx] = sort(prices_for_curve);
             max_powers_for_curve = max_powers_for_curve(sort_idx);
             
-            figure('Position', [300 300 800 500]);
-            plot(prices_for_curve / 100, max_powers_for_curve, 'bo-', 'LineWidth', 2, 'MarkerSize', 8, 'MarkerFaceColor', 'b');
-            xlabel('激励电价 (元/kW)', 'FontSize', 20);
-            ylabel('聚合整体功率峰值 (kW)', 'FontSize', 20);
-            grid on; set(gca, 'FontSize', 16);
-            print(gcf, '图11_AC激励价格-聚合整体功率特性.png', '-dpng', '-r300');
+            % [修改]: 样式调整为与 EV 代码一致
+            fig11 = figure('Name', 'AC激励价格-聚合整体功率特性', 'Position', [300 300 800 500], 'NumberTitle', 'off');
+            plot(prices_for_curve / 100, max_powers_for_curve, 'bo-', 'LineWidth', 2.5, 'MarkerSize', 12, 'MarkerFaceColor', 'b');
+            xlabel('激励电价 (元/kW)', 'FontSize', 23);
+            ylabel('聚合整体功率峰值 (kW)', 'FontSize', 23);
+            set(gca, 'FontSize', 19);
+            grid on;
+            set(fig11, 'Renderer', 'painters');
+            print(fig11, '图11_AC激励价格-聚合整体功率特性.png', '-dpng', '-r600');
         else
             fprintf('  未提取到有效的批量数据。\n');
         end
