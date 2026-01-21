@@ -1,10 +1,14 @@
-
+%% AC_Result_Plotter_8am.m
+% 功能：读取仿真结果并绘制高DPI、无标题、中文图例的分析图表 (8:00起)
+%       1. 读取 AC_Stateful_Simulation_Results_..._8am.mat (单次仿真)
+%       2. 读取 results_AC 文件夹下的批量结果 (不同电价)
+%       3. 读取不同 dt (5min, 15min, 60min) 的结果进行对比
+%       4. 绘制激励电价 vs 聚合整体功率特性曲线 (验证死区/饱和区)
+%       5. [修复] 图8子图保存为 EMF 矢量格式
+%       6. [修改 V4] 图2 SOC 矩形框高度自适应数据范围，仅包裹分散区域
+% 依赖：AC_main_1_inc_pi_8am.m 生成的数据
 
 clear; close all; clc;
-
-% [已修改] 恢复默认字体设置
-% set(0, 'DefaultAxesFontName', 'Microsoft YaHei'); 
-% set(0, 'DefaultTextFontName', 'Microsoft YaHei');
 
 %% === 第一部分：单次仿真结果绘图 ===
 
@@ -35,10 +39,10 @@ if has_single_result
         error('数据中缺失时间轴。');
     end
     
-    % [修改] 确保时间轴是 8 到 32，如果数据直接是 8-32，无需处理
+    % 确保时间轴是 8 到 32
     if isrow(time_points), time_points = time_points'; end
 
-    % 提取数据 (兼容不同版本的字段名)
+    % 提取数据
     if isfield(results, 'Individual_SOC_History_Transposed')
         Individual_SOC_History = results.Individual_SOC_History_Transposed';
     elseif isfield(results, 'SOC_AC')
@@ -90,12 +94,10 @@ if has_single_result
     
     P_standby = 0.05; 
 
-    % [修改] 已移除数据拼接逻辑，直接使用读取的数据
-
     % --- 2. 开始绘图 (图1-7) ---
     fprintf('正在生成单次仿真图表 (8:00 - 次日 8:00)...\n');
     
-    % [修改] 定义通用 X 轴设置函数：范围 8-32，但标签显示为时刻，避免显示 "32"
+    % 定义通用 X 轴设置函数
     set_xaxis_custom = @() set(gca, ...
         'XLim', [8, 32], ...
         'XTick', 8:4:32, ...
@@ -109,7 +111,6 @@ if has_single_result
         hold on;
         plot(time_points, Agg_P_Achieved_History, 'r-', 'LineWidth', 1.5, 'DisplayName', '聚合响应功率');
         hold off;
-        % 字体放大
         xlabel('时间', 'FontSize', 20);
         ylabel('功率 (kW)', 'FontSize', 20);
         legend('show', 'Location', 'best', 'FontSize', 16);
@@ -117,33 +118,123 @@ if has_single_result
         print(gcf, '图1_功率跟踪对比.png', '-dpng', '-r300');
     end
     
-    % 图 2: SOC状态对比
+    % 图 2: SOC状态对比 (含彩色线条、自适应矩形框及子图)
     if ~isempty(Individual_SOC_History) && ~isempty(Agg_SOC_History)
-        figure('Position', [100 550 1000 450]);
-        hold on;
-        h_ind = plot(time_points, Individual_SOC_History, 'Color', [0.8 0.8 0.8], 'LineWidth', 0.5);
+        fig2 = figure('Position', [100 550 1000 450]);
+        ax2 = gca;
+        hold(ax2, 'on');
+        
+        % --- 彩色线条绘制 ---
+        h_ind = plot(time_points, Individual_SOC_History, 'LineWidth', 0.5);
+        num_lines = length(h_ind);
+        line_colors = jet(num_lines); 
+        for k = 1:num_lines
+            set(h_ind(k), 'Color', line_colors(k, :));
+        end
+
         h_agg = plot(time_points, Agg_SOC_History, 'k--', 'LineWidth', 2.5, 'DisplayName', '聚合SOC (均值)');
+        
         if num_AC_participating > 0
             set(h_ind(1), 'DisplayName', '单体空调SOC');
             if num_AC_participating > 1, set(h_ind(2:end), 'HandleVisibility', 'off'); end
-            legend([h_agg, h_ind(1)], 'Location', 'best', 'FontSize', 16); % 字体放大
+            legend([h_agg, h_ind(1)], 'Location', 'best', 'FontSize', 16);
         else
-            legend(h_agg, 'Location', 'best', 'FontSize', 16); % 字体放大
+            legend(h_agg, 'Location', 'best', 'FontSize', 16);
         end
-        hold off;
-        % 字体放大
+        
+        % 基础格式设置
         xlabel('时间', 'FontSize', 20);
         ylabel('SOC', 'FontSize', 20);
         set_xaxis_custom();
         ylim([-0.1, 1.1]); grid on;
-        print(gcf, '图2_SOC状态对比.png', '-dpng', '-r300');
+
+        % --- [修改]：寻找SOC最分散区域并绘制自适应高度的矩形 ---
+        % 1. 计算每一时刻的SOC标准差
+        soc_std = std(Individual_SOC_History, 0, 2);
+        
+        % 2. 找到标准差最大的时刻
+        [max_std, idx_max_spread] = max(soc_std);
+        t_center = time_points(idx_max_spread);
+        
+        % 3. 定义放大窗口 (30分钟)
+        zoom_window_hours = 0.5; 
+        t_zoom_start = max(8, t_center - zoom_window_hours/2);
+        t_zoom_end = min(32, t_center + zoom_window_hours/2);
+        
+        % 4. 计算该窗口内的SOC最大/最小值，确定矩形高度
+        mask_zoom = (time_points >= t_zoom_start) & (time_points <= t_zoom_end);
+        if any(mask_zoom)
+            data_in_window = Individual_SOC_History(mask_zoom, :);
+            soc_min_zoom = min(data_in_window, [], 'all');
+            soc_max_zoom = max(data_in_window, [], 'all');
+            
+            % 添加一点视觉边距 (例如上下各加 0.05 SOC)
+            rect_y = max(-0.1, soc_min_zoom - 0.05);
+            rect_top = min(1.1, soc_max_zoom + 0.05);
+            rect_height = rect_top - rect_y;
+        else
+            % 兜底逻辑
+            rect_y = 0; rect_height = 1;
+        end
+
+        fprintf('  [图2] SOC最分散时刻: %.2f (Std: %.4f), 窗口: %.2f-%.2f, SOC范围: %.2f-%.2f\n', ...
+            t_center, max_std, t_zoom_start, t_zoom_end, rect_y, rect_y+rect_height);
+
+        % 5. 在母图上绘制黑色虚线框 (高度紧凑)
+        rect_width = t_zoom_end - t_zoom_start;
+        rectangle(ax2, 'Position', [t_zoom_start, rect_y, rect_width, rect_height], ...
+                  'EdgeColor', 'k', 'LineWidth', 2, 'LineStyle', '--');
+       
+        hold(ax2, 'off');
+        print(fig2, '图2_SOC状态对比.png', '-dpng', '-r300');
+        
+        % --- [修改]：绘制局部放大子图 (去边框/网格/图例) ---
+        fig2_sub = figure('Name', 'SOC子图', 'Color', 'w', 'Position', [150 600 600 400]);
+        ax2_sub = axes(fig2_sub);
+        hold(ax2_sub, 'on');
+        
+        t_sub = time_points(mask_zoom);
+        data_sub = Individual_SOC_History(mask_zoom, :);
+        agg_sub = Agg_SOC_History(mask_zoom);
+        
+        % 绘制彩色线条
+        for k = 1:num_lines
+            plot(ax2_sub, t_sub, data_sub(:, k), 'LineWidth', 1.0, 'Color', line_colors(k, :));
+        end
+        plot(ax2_sub, t_sub, agg_sub, 'k--', 'LineWidth', 3.0); % 加粗聚合线
+        
+        % 子图格式设置
+        xlim(ax2_sub, [t_zoom_start, t_zoom_end]);
+        % Y轴范围略大于数据范围
+        ylim(ax2_sub, [rect_y, rect_y + rect_height]);
+        
+        xlabel(ax2_sub, '时间', 'FontSize', 16, 'FontWeight', 'bold');
+        ylabel(ax2_sub, 'SOC', 'FontSize', 16, 'FontWeight', 'bold');
+        
+        % 去掉上边框和右边框，刻度朝外
+        set(ax2_sub, 'FontSize', 14, 'Box', 'off', 'LineWidth', 1.5, 'TickDir', 'out');
+        
+        % 去掉网格
+        grid(ax2_sub, 'off');
+        
+        % 确保无图例
+        legend(ax2_sub, 'off');
+        
+        % 保存子图为 EMF (透明背景)
+        set(fig2_sub, 'Color', 'none'); 
+        set(ax2_sub, 'Color', 'none');
+        set(fig2_sub, 'InvertHardcopy', 'off'); 
+        
+        print(fig2_sub, '图2_SOC状态对比_子图.emf', '-dmeta');
+        fprintf('  已保存: 图2_SOC状态对比.png (母图) 和 图2_SOC状态对比_子图.emf (紧凑矢量子图)\n');
+        
+        set(fig2_sub, 'Color', 'w'); % 恢复白色
     end
     
     % 图 3: 室内温度变化
     if ~isempty(Individual_Temp_History)
         figure('Position', [100 300 1000 450]);
         plot(time_points, Individual_Temp_History, 'LineWidth', 0.5);
-        % 字体放大
         xlabel('时间', 'FontSize', 20);
         ylabel('温度 (°C)', 'FontSize', 20);
         set_xaxis_custom(); grid on;
@@ -155,7 +246,6 @@ if has_single_result
         figure('Position', [100 400 1000 450]);
         plot(time_points, Individual_Power_History, 'LineWidth', 0.5);
         yline(0, 'k--', 'LineWidth', 1.5);
-        % 字体放大
         xlabel('时间', 'FontSize', 20);
         ylabel('功率 (kW)', 'FontSize', 20);
         set_xaxis_custom(); grid on;
@@ -167,7 +257,6 @@ if has_single_result
         figure('Position', [100 500 1000 450]);
         plot(time_points, Total_Power_History, 'LineWidth', 0.5);
         yline(P_standby, 'k--', 'LineWidth', 1.5, 'DisplayName', '待机功率');
-        % 字体放大
         xlabel('时间', 'FontSize', 20);
         ylabel('功率 (kW)', 'FontSize', 20);
         set_xaxis_custom(); grid on;
@@ -181,7 +270,6 @@ if has_single_result
         plot(time_points, Agg_Baseline_Power, 'b--', 'LineWidth', 2, 'DisplayName', '聚合基线功率');
         plot(time_points, Agg_Total_Power, 'r-', 'LineWidth', 2, 'DisplayName', '聚合总制冷功率');
         hold off;
-        % 字体放大
         xlabel('时间', 'FontSize', 20);
         ylabel('功率 (kW)', 'FontSize', 20);
         legend('show', 'Location', 'best', 'FontSize', 16);
@@ -200,7 +288,6 @@ if has_single_result
             plot(time_points, Agg_Model_Potential_Down_History, 'r--', 'LineWidth', 2, 'DisplayName', '聚合模型下调潜力');
         end
         hold off;
-        % 字体放大
         xlabel('时间', 'FontSize', 20);
         ylabel('功率 (kW)', 'FontSize', 20);
         legend('show', 'Location', 'best', 'FontSize', 16);
@@ -225,7 +312,6 @@ if has_single_result
             % 定义放大窗口参数
             t_center = Time_Vec(idx_max);
             window_width = 0.2; % 小时
-            % [修改] 边界限制调整为 8 到 32
             t_start_zoom = max(8, t_center - window_width/2);
             t_end_zoom = min(32, t_center + window_width/2);
             
@@ -235,7 +321,6 @@ if has_single_result
             % 计算Y轴显示范围
             data_in_window = [Agg_Total_Vec(mask_zoom); Agg_Model_Vec(mask_zoom)];
             if isempty(data_in_window)
-                 % 容错处理
                  y_rect_min = 0; y_rect_max = 1; y_rect_h = 1;
             else
                 y_min_zoom = min(data_in_window);
@@ -247,30 +332,25 @@ if has_single_result
                 y_rect_h = y_rect_max - y_rect_min;
             end
             
-            % --- 2. 绘制母图 (白色背景，保存为PNG) ---
+            % --- 2. 绘制母图 ---
             figure('Position', [100 600 1000 450]);
             hold on;
             plot(time_points, Agg_Total_Power, 'r-', 'LineWidth', 2, 'DisplayName', '聚合总制冷功率 (单体累加)');
             plot(time_points, Agg_Model_Total_Power, 'g:', 'LineWidth', 2.5, 'DisplayName', '聚合模型制冷功率');
             
-            % 绘制标注矩形框
             rectangle('Position', [t_start_zoom, y_rect_min, window_width, y_rect_h], ...
                       'EdgeColor', 'k', 'LineWidth', 1.5, 'LineStyle', '--');
             
             hold off;
-            % 字体放大
             xlabel('时间', 'FontSize', 20);
             ylabel('功率 (kW)', 'FontSize', 20);
             legend('show', 'Location', 'best', 'FontSize', 16);
             set_xaxis_custom(); grid on;
             
             print(gcf, '图8_聚合功率对比_母图.png', '-dpng', '-r300');
-            fprintf('  已保存: 图8_聚合功率对比_母图.png\n');
             
-            % --- 3. 绘制子图 (EMF矢量格式，支持透明) ---
-            figure('Position', [150 650 500 350]); % 尺寸稍小
-            
-            % 在屏幕上保持白色背景，方便查看
+            % --- 3. 绘制子图 ---
+            figure('Position', [150 650 500 350]); 
             set(gcf, 'Color', 'w');
             
             hold on;
@@ -280,34 +360,22 @@ if has_single_result
             end
             hold off;
             
-            % 设置坐标轴范围
             xlim([t_start_zoom, t_end_zoom]);
             ylim([y_rect_min, y_rect_max]);
-            grid off; % <--- 移除子图网格线，保留坐标轴
+            grid off; 
             
-            % 子图字体特大
             set(gca, 'FontSize', 24); 
-            
-            % 去掉标题、XY轴标签、图例
             xlabel(''); ylabel('');
             legend('off');
             
-            % === 关键修改：保存为 EMF 矢量图 ===
             img_filename = '图8_聚合功率对比_子图.emf';
-            
-            % 设置属性以确保 EMF 转换时不带背景色
             set(gcf, 'Color', 'none'); 
             set(gca, 'Color', 'none');
             set(gcf, 'InvertHardcopy', 'off'); 
             
-            % 使用 -dmeta 指令保存为增强型图元文件 (EMF)
             print(gcf, img_filename, '-dmeta');
-            
-            % 恢复白色背景
-            set(gcf, 'Color', 'w');
-            set(gca, 'Color', 'w');
-            
-            fprintf('  已保存: %s (EMF矢量格式，支持透明)\n', img_filename);
+            set(gcf, 'Color', 'w'); set(gca, 'Color', 'w');
+            fprintf('  已保存: %s\n', img_filename);
         end
     end
 
@@ -346,7 +414,6 @@ if exist(results_dir, 'dir')
                     end
                     
                     if ~isnan(p) && isfield(res, 'time_points')
-                        % [修改] 批量数据也假定已经是 8-32 的格式
                         tp = res.time_points;
                         if isfield(res, 'time_points_absolute'), tp = res.time_points_absolute; end
                         if isrow(tp), tp = tp'; end
@@ -369,7 +436,6 @@ if exist(results_dir, 'dir')
             data_list = data_list(sort_idx);
             colors_multi = jet(length(data_list));
             
-            % [修改] 重新定义 X 轴设置函数
             set_xaxis_custom = @() set(gca, ...
                 'XLim', [8, 32], ...
                 'XTick', 8:4:32, ...
@@ -388,7 +454,6 @@ if exist(results_dir, 'dir')
                     end
                 end
                 hold off;
-                % 字体放大
                 xlabel('时间', 'FontSize', 20);
                 ylabel('聚合总制冷功率 (kW)', 'FontSize', 20);
                 legend(legend_str, 'Location', 'best', 'FontSize', 16);
@@ -408,7 +473,6 @@ if exist(results_dir, 'dir')
                     end
                 end
                 hold off;
-                % 字体放大
                 xlabel('时间', 'FontSize', 20);
                 ylabel('AC集群上调潜力 (kW)', 'FontSize', 20);
                 legend(legend_str_up, 'Location', 'best', 'FontSize', 16);
@@ -428,7 +492,6 @@ if exist(results_dir, 'dir')
                     end
                 end
                 hold off;
-                % 字体放大
                 xlabel('时间', 'FontSize', 20);
                 ylabel('AC集群下调潜力 (kW)', 'FontSize', 20);
                 legend(legend_str_down, 'Location', 'best', 'FontSize', 16);
@@ -437,8 +500,6 @@ if exist(results_dir, 'dir')
             end
 
             % 图 11: 激励价格 vs 聚合整体功率特性曲线
-            % 注意：此图 X 轴是价格，无需调整
-            fprintf('  正在绘制图 11 (激励价格-聚合整体功率特性)...\n');
             prices_for_curve = [data_list.price];
             max_powers_for_curve = zeros(size(prices_for_curve));
             for k = 1:length(data_list)
@@ -455,7 +516,6 @@ if exist(results_dir, 'dir')
             
             figure('Position', [300 300 800 500]);
             plot(prices_for_curve / 100, max_powers_for_curve, 'bo-', 'LineWidth', 2, 'MarkerSize', 8, 'MarkerFaceColor', 'b');
-            % 字体放大
             xlabel('激励电价 (元/kW)', 'FontSize', 20);
             ylabel('聚合整体功率峰值 (kW)', 'FontSize', 20);
             grid on; set(gca, 'FontSize', 16);
@@ -496,14 +556,13 @@ for i = 1:length(dt_files)
                 if isfield(res, 'Agg_P_Potential_Up_History') && isfield(res, 'Agg_P_Potential_Down_History')
                     valid_dt_count = valid_dt_count + 1;
                     
-                    % [修改] 假定数据已经是 8-32 格式，不再拼接
                     if isfield(res, 'time_points')
                         tp = res.time_points;
                     elseif isfield(res, 'time_points_absolute')
                         tp = res.time_points_absolute;
                     else
                         len = length(res.Agg_P_Potential_Up_History);
-                        tp = linspace(8, 32, len)'; % 假定也是8-32
+                        tp = linspace(8, 32, len)'; 
                     end
                     if isrow(tp), tp = tp'; end
                     
@@ -532,7 +591,6 @@ if valid_dt_count > 0
         plot(data_dt_list(i).time, data_dt_list(i).up, 'LineWidth', 2.0, 'LineStyle', line_styles{i}, 'Color', colors_dt(i,:), 'DisplayName', ['dt = ' data_dt_list(i).label]);
     end
     hold off;
-    % 字体放大
     xlabel('时间', 'FontSize', 20);
     ylabel('AC集群上调潜力 (kW)', 'FontSize', 20);
     legend('show', 'Location', 'best', 'FontSize', 16);
@@ -545,7 +603,6 @@ if valid_dt_count > 0
         plot(data_dt_list(i).time, data_dt_list(i).down, 'LineWidth', 2.0, 'LineStyle', line_styles{i}, 'Color', colors_dt(i,:), 'DisplayName', ['dt = ' data_dt_list(i).label]);
     end
     hold off;
-    % 字体放大
     xlabel('时间', 'FontSize', 20);
     ylabel('AC集群下调潜力 (kW)', 'FontSize', 20);
     legend('show', 'Location', 'best', 'FontSize', 16);
