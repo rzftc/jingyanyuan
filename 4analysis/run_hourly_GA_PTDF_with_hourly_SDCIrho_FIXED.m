@@ -1,0 +1,426 @@
+% run_hourly_GA_PTDF_with_hourly_SDCIrho_v2_FIXED.m
+% (版本 11: 引入小时级MILP求解器)
+% (FIXED: 向GA传递成本参数以统一可行性检查标准)
+function run_hourly_GA_PTDF_with_hourly_SDCIrho_FIXED()
+    %% 内存优化的分层调度脚本 (版本 11: 引入小时级MILP求解器)
+    clc; close all; clear;
+
+    % --- 1. 加载数据 ---
+    
+    % ==================== 【修改开始：支持按文件指定加载数量】 ====================
+    % 定义要加载的分块文件及其行数限制
+    % 'ac_rows' 和 'ev_rows' 设置为 inf 表示加载该文件中的所有设备
+    chunk_load_config = [
+         struct('file', 'chunk_results/results_chunk_1.mat', 'ac_rows', inf, 'ev_rows', inf),
+        struct('file', 'chunk_results/results_chunk_2.mat', 'ac_rows', inf, 'ev_rows', inf),
+        struct('file', 'chunk_results/results_chunk_3.mat', 'ac_rows', inf, 'ev_rows', inf)
+        % 您可以在此处添加更多文件:
+        % struct('file', 'chunk_results/results_chunk_3.mat', 'ac_rows', 500, 'ev_rows', 500)
+    ];
+    
+    fprintf('准备加载 %d 个分块文件 (带自定义行数限制)...\n', length(chunk_load_config));
+
+    % 初始化用于聚合所有分块数据的矩阵
+    P_ac_potential_full = [];
+    P_ev_potential_full = [];
+    P_ac_potential_down_full = [];
+    P_ev_potential_down_full = [];
+    T_global = 0; % 用于检查所有文件的时间步长是否一致
+
+    for i = 1:length(chunk_load_config)
+        config = chunk_load_config(i);
+        chunk_file = config.file;
+        
+        fprintf('  正在加载分块数据: %s (AC行数: %s, EV行数: %s)\n', ...
+            chunk_file, num2str(config.ac_rows), num2str(config.ev_rows));
+        
+        if ~exist(chunk_file, 'file')
+            warning('文件 %s 未找到，已跳过。', chunk_file);
+            continue;
+        end
+        
+        try
+            data_struct = load(chunk_file);
+            if isfield(data_struct, 'results')
+                sim_results = data_struct.results;
+            else
+                warning('在 %s 文件中未找到 "results" 结构体，已跳过。', chunk_file);
+                continue;
+            end
+        catch ME
+            warning('加载数据文件 %s 失败: %s，已跳过。', chunk_file, ME.message);
+            continue;
+        end
+
+        % 提取数据并检查时间维度
+        T_current_chunk = 0;
+
+        % 提取 AC 上调
+        if isfield(sim_results, 'AC_Up_Individual') && ~isempty(sim_results.AC_Up_Individual)
+            T_current_chunk = size(sim_results.AC_Up_Individual, 2);
+            if T_global == 0
+                T_global = T_current_chunk;
+            elseif T_global ~= T_current_chunk
+                warning('文件 %s 的时间步 (%d) 与全局 T (%d) 不匹配，已跳过。', chunk_file, T_current_chunk, T_global);
+                continue;
+            end
+            
+            ac_data_up = sim_results.AC_Up_Individual;
+            rows_to_take_ac = min(config.ac_rows, size(ac_data_up, 1));
+            P_ac_potential_full = [P_ac_potential_full; ac_data_up(1:rows_to_take_ac, :)];
+            fprintf('    -> 已聚合 %d / %d 条 AC Up 记录。\n', rows_to_take_ac, size(ac_data_up, 1));
+        end
+        
+        % 提取 EV 上调
+        if isfield(sim_results, 'EV_Up_Individual') && ~isempty(sim_results.EV_Up_Individual)
+            T_current_chunk = size(sim_results.EV_Up_Individual, 2);
+            if T_global == 0
+                T_global = T_current_chunk;
+            elseif T_global ~= T_current_chunk
+                warning('文件 %s (EV Up) 的时间步 (%d) 与全局 T (%d) 不匹配，已跳过。', chunk_file, T_current_chunk, T_global);
+                continue;
+            end
+
+            ev_data_up = sim_results.EV_Up_Individual;
+            rows_to_take_ev = min(config.ev_rows, size(ev_data_up, 1));
+            P_ev_potential_full = [P_ev_potential_full; ev_data_up(1:rows_to_take_ev, :)];
+            fprintf('    -> 已聚合 %d / %d 条 EV Up 记录。\n', rows_to_take_ev, size(ev_data_up, 1));
+        end
+
+        % 提取 AC 下调
+        if isfield(sim_results, 'AC_Down_Individual') && ~isempty(sim_results.AC_Down_Individual)
+            T_current_chunk = size(sim_results.AC_Down_Individual, 2);
+            if T_global == 0
+                T_global = T_current_chunk;
+            elseif T_global ~= T_current_chunk
+                warning('文件 %s (AC Down) 的时间步 (%d) 与全局 T (%d) 不匹配，已跳过。', chunk_file, T_current_chunk, T_global);
+                continue;
+            end
+
+            ac_data_down = abs(sim_results.AC_Down_Individual);
+            rows_to_take_ac = min(config.ac_rows, size(ac_data_down, 1));
+            P_ac_potential_down_full = [P_ac_potential_down_full; ac_data_down(1:rows_to_take_ac, :)];
+            fprintf('    -> 已聚合 %d / %d 条 AC Down 记录。\n', rows_to_take_ac, size(ac_data_down, 1));
+        end
+
+        % 提取 EV 下调
+        if isfield(sim_results, 'EV_Down_Individual') && ~isempty(sim_results.EV_Down_Individual)
+            T_current_chunk = size(sim_results.EV_Down_Individual, 2);
+            if T_global == 0
+                T_global = T_current_chunk;
+            elseif T_global ~= T_current_chunk
+                warning('文件 %s (EV Down) 的时间步 (%d) 与全局 T (%d) 不匹配，已跳过。', chunk_file, T_current_chunk, T_global);
+                continue;
+            end
+
+            ev_data_down = abs(sim_results.EV_Down_Individual);
+            rows_to_take_ev = min(config.ev_rows, size(ev_data_down, 1));
+            P_ev_potential_down_full = [P_ev_potential_down_full; ev_data_down(1:rows_to_take_ev, :)];
+            fprintf('    -> 已聚合 %d / %d 条 EV Down 记录。\n', rows_to_take_ev, size(ev_data_down, 1));
+        end
+    end
+    
+    if T_global == 0
+        error('未能从任何文件中成功加载数据。');
+    end
+
+    [num_ac_total, T] = size(P_ac_potential_full);
+    [num_ev_total, ~] = size(P_ev_potential_full);
+    
+    if T ~= T_global, warning('AC 和 EV 数据的时间步不一致。使用 AC 的 T = %d', T); end
+    if isempty(P_ac_potential_full), P_ac_potential_full = zeros(0, T); end
+    if isempty(P_ev_potential_full), P_ev_potential_full = zeros(0, T); end
+    if isempty(P_ac_potential_down_full), P_ac_potential_down_full = zeros(0, T); end
+    if isempty(P_ev_potential_down_full), P_ev_potential_down_full = zeros(0, T); end
+
+    % --- 将数据加载到硬盘 matfile ---
+    individual_file = 'temp_individual_data_for_opt.mat';
+    if exist(individual_file, 'file'), delete(individual_file); end
+    m_individual = matfile(individual_file, 'Writable', true);
+    m_individual.AC_Up_Individual = P_ac_potential_full;
+    m_individual.EV_Up_Individual = P_ev_potential_full;
+    m_individual.AC_Down_Individual = -P_ac_potential_down_full; 
+    m_individual.EV_Down_Individual = -P_ev_potential_down_full;
+    clear P_ac_potential_full P_ev_potential_full P_ac_potential_down_full P_ev_potential_down_full data_struct sim_results;
+
+    AC_Up_raw = sum(m_individual.AC_Up_Individual, 1);
+    EV_Up_raw = sum(m_individual.EV_Up_Individual, 1);
+    AC_Down_raw = sum(abs(m_individual.AC_Down_Individual), 1);
+    EV_Down_raw = sum(abs(m_individual.EV_Down_Individual), 1);
+    fprintf('数据维度加载完成。\nT=%d, N_AC=%d, N_EV=%d\n', T, num_ac_total, num_ev_total);
+    
+    
+    % --- 2. 定义仿真参数 ---
+    dt = 0.05; steps_per_hour = round(1/dt); num_hours = floor(T / steps_per_hour);
+    fprintf('仿真参数: dt=%.3f小时, 每小时步数=%d, 总小时数=%d\n', dt, steps_per_hour, num_hours);
+
+    Total_Up_Potential_t = (AC_Up_raw + EV_Up_raw)';
+    Total_Down_Potential_t = (AC_Down_raw + EV_Down_raw)';
+    scaling_factor_up = (0.2 + (0.8 - 0.2) * rand(T, 1));
+    scaling_factor_down = (0.2 + (0.6 - 0.2) * rand(T, 1));
+    P_grid_up_demand = Total_Up_Potential_t .* scaling_factor_up;
+    P_grid_down_demand = Total_Down_Potential_t .* scaling_factor_down;
+    fprintf('电网调节指令已更新。\n');
+
+    c_ac_up = ones(num_ac_total, 1) * 0.05; c_ev_up = ones(num_ev_total, 1) * 0.04;
+    c_ac_down = ones(num_ac_total, 1) * 0.03; c_ev_down = ones(num_ev_total, 1) * 0.02;
+    eps_val = 1e-6;
+
+    % --- 2.5 定义网络拓扑参数 (示例数据) ---
+    fprintf('正在定义网络拓扑参数 (示例)...\n');
+    N_bus = 10; N_line = 8; 
+    if num_ac_total > 0, Location_AC = mod( (1:num_ac_total)' - 1, N_bus) + 1; else, Location_AC = []; end
+    if num_ev_total > 0, Location_EV = mod( (1:num_ev_total)' - 1, N_bus) + 1; else, Location_EV = []; end
+    PTDF_matrix = rand(N_line, N_bus) * 0.2 - 0.1; 
+    P_Line_Base = rand(N_line, T) * 50 - 25; 
+    P_Line_Max = rand(N_line, 1) * 1000 + 50; 
+
+    % --- 2.6 定义GA搜索上界 (修复超时问题的关键) ---
+    ub_ac_for_ga = min(num_ac_total, num_ac_total);
+    ub_ev_for_ga = min(num_ev_total, num_ac_total);
+    fprintf('MILP计算限制已设置：GA将从 %d ACs 和 %d EVs 中搜索最多 %d ACs 和 %d EVs。\n', ...
+            num_ac_total, num_ev_total, ub_ac_for_ga, ub_ev_for_ga);
+
+    %% 3. 分层优化主循环
+    U_ac_up_final = zeros(num_ac_total, T); U_ev_up_final = zeros(num_ev_total, T);
+    U_ac_down_final = zeros(num_ac_total, T); U_ev_down_final = zeros(num_ev_total, T);
+    cost_up_final = zeros(1, T); cost_down_final = zeros(1, T);
+    P_ac_dispatched_opt_up_t = zeros(1,T); P_ev_dispatched_opt_up_t = zeros(1,T);
+    P_ac_dispatched_opt_down_t = zeros(1,T); P_ev_dispatched_opt_down_t = zeros(1,T);
+    
+    rho_up_raw_hourly = zeros(1, num_hours); sdci_up_raw_hourly = zeros(1, num_hours);
+    rho_up_opt_hourly = zeros(1, num_hours); sdci_up_opt_hourly = zeros(1, num_hours);
+    rho_down_raw_hourly = zeros(1, num_hours); sdci_down_raw_hourly = zeros(1, num_hours);
+    rho_down_opt_hourly = zeros(1, num_hours); sdci_down_opt_hourly = zeros(1, num_hours);
+
+    fprintf('\n开始分层优化 (共 %d 小时)...\n', num_hours);
+    tic_loop = tic;
+    pool = gcp('nocreate'); if isempty(pool), parpool(); end
+  
+    % --- 主循环 (串行) ---
+    for h = 1:num_hours
+        fprintf('--- 正在优化第 %d 小时 ---\n', h);
+
+        % --- 3.1 定义当前小时的时间范围和数据 ---
+        start_step = (h-1) * steps_per_hour + 1;
+        end_step = h * steps_per_hour;
+        if end_step > T; end_step = T; end
+        current_steps_indices = start_step:end_step;
+        current_steps_in_hour = length(current_steps_indices);
+
+        fprintf('  加载第 %d 小时数据...\n', h);
+        P_ac_up_hourly = double(m_individual.AC_Up_Individual(:, current_steps_indices));
+        P_ev_up_hourly = double(m_individual.EV_Up_Individual(:, current_steps_indices));
+        P_ac_down_hourly = double(abs(m_individual.AC_Down_Individual(:, current_steps_indices)));
+        P_ev_down_hourly = double(abs(m_individual.EV_Down_Individual(:, current_steps_indices)));
+        P_req_up_hourly = P_grid_up_demand(current_steps_indices);
+        P_req_down_hourly = P_grid_down_demand(current_steps_indices);
+        P_Line_Base_hourly = P_Line_Base(:, current_steps_indices);
+        fprintf('  数据加载完毕.\n');
+
+        % --- 3.2 上层GA ---
+        fprintf('  上层GA: 优化设备参与数量 (包含网络估算)...\n');
+        ga_opts_cell = {'Display', 'off', 'UseParallel', true};
+        
+        % [!!! 关键修改 1a !!!] 调用FIXED版本，并传递成本
+        [n_ac_up_hourly, n_ev_up_hourly] = optimize_hourly_participation_GA_constrained_ptdf_FIXED( ...
+            num_ac_total, num_ev_total, P_ac_up_hourly, P_ev_up_hourly, P_req_up_hourly, current_steps_in_hour, ga_opts_cell, ...
+            Location_AC, Location_EV, PTDF_matrix, P_Line_Base_hourly, P_Line_Max, N_bus, N_line, ...
+            c_ac_up, c_ev_up); % <-- 新增成本
+        fprintf('  GA结果(上调): n_ac=%d, n_ev=%d\n', n_ac_up_hourly, n_ev_up_hourly);
+        
+        % [!!! 关键修改 1b !!!] 调用FIXED版本，并传递成本
+        [n_ac_down_hourly, n_ev_down_hourly] = optimize_hourly_participation_GA_constrained_ptdf_FIXED( ...
+            num_ac_total, num_ev_total, P_ac_down_hourly, P_ev_down_hourly, P_req_down_hourly, current_steps_in_hour, ga_opts_cell, ...
+            Location_AC, Location_EV, PTDF_matrix, P_Line_Base_hourly, P_Line_Max, N_bus, N_line, ...
+            c_ac_down, c_ev_down); % <-- 新增成本
+        fprintf('  GA结果(下调): n_ac=%d, n_ev=%d\n', n_ac_down_hourly, n_ev_down_hourly);
+        
+        % 计算优化前的rho和sdci
+        avg_P_ac_raw_up_t = sum(P_ac_up_hourly, 1)' ./ (num_ac_total + eps_val);
+        avg_P_ev_raw_up_t = sum(P_ev_up_hourly, 1)' ./ (num_ev_total + eps_val);
+        sdci_up_raw_hourly(h) = calculateSDCI(repmat(num_ac_total, current_steps_in_hour, 1), repmat(num_ev_total, current_steps_in_hour, 1), avg_P_ac_raw_up_t, avg_P_ev_raw_up_t);
+        rho_up_raw_hourly(h) = calculateSpearmanRho(repmat(num_ac_total, current_steps_in_hour, 1), avg_P_ac_raw_up_t, repmat(num_ev_total, current_steps_in_hour, 1), avg_P_ev_raw_up_t);
+        avg_P_ac_raw_down_t = sum(P_ac_down_hourly, 1)' ./ (num_ac_total + eps_val);
+        avg_P_ev_raw_down_t = sum(P_ev_down_hourly, 1)' ./ (num_ev_total + eps_val);
+        sdci_down_raw_hourly(h) = calculateSDCI(repmat(num_ac_total, current_steps_in_hour, 1), repmat(num_ev_total, current_steps_in_hour, 1), avg_P_ac_raw_down_t, avg_P_ev_raw_down_t);
+        rho_down_raw_hourly(h) = calculateSpearmanRho(repmat(num_ac_total, current_steps_in_hour, 1), avg_P_ac_raw_down_t, repmat(num_ev_total, current_steps_in_hour, 1), avg_P_ev_raw_down_t);
+
+        
+        % ==================== 【下层MILP调度】 ====================
+        fprintf('  下层MILP: 对第 %d 小时执行整体约束调度...\n', h);
+        % (这部分逻辑保持不变，它调用的是 solve_hourly_dispatch_ptdf_hourly)
+
+        % --- 上调调度 (调用 _hourly 函数) ---
+        [u_ac_up_h, u_ev_up_h, cost_up_h_total, flag_up] = solve_hourly_dispatch_ptdf_hourly_fixed( ...
+            num_ac_total, num_ev_total, P_ac_up_hourly, P_ev_up_hourly, c_ac_up, c_ev_up, P_req_up_hourly, ...
+            n_ac_up_hourly, n_ev_up_hourly, Location_AC, Location_EV, PTDF_matrix, ...
+            P_Line_Base_hourly, P_Line_Max, N_bus, N_line, h);
+
+        if flag_up > 0
+            % 广播（Repmat）小时级决策到该小时的每个时间步
+            U_ac_up_final(:, current_steps_indices) = repmat(u_ac_up_h, 1, current_steps_in_hour);
+            U_ev_up_final(:, current_steps_indices) = repmat(u_ev_up_h, 1, current_steps_in_hour);
+            
+            % 计算每个时间步的功率和成本
+            p_ac_up_h_vec = (u_ac_up_h' * P_ac_up_hourly)'; % (1 x N_ac) * (N_ac x T_h) -> (1 x T_h) -> (T_h x 1)
+            p_ev_up_h_vec = (u_ev_up_h' * P_ev_up_hourly)';
+            P_ac_dispatched_opt_up_t(current_steps_indices) = p_ac_up_h_vec;
+            P_ev_dispatched_opt_up_t(current_steps_indices) = p_ev_up_h_vec;
+            
+            % 成本按功率比例分摊到每个时间步 (近似)
+            cost_up_final(current_steps_indices) = cost_up_h_total * (p_ac_up_h_vec + p_ev_up_h_vec) / (sum(p_ac_up_h_vec + p_ev_up_h_vec) + eps_val);
+        else
+            cost_up_final(current_steps_indices) = NaN;
+        end
+
+        % --- 下调调度 (调用 _hourly 函数) ---
+        [u_ac_down_h, u_ev_down_h, cost_down_h_total, flag_down] = solve_hourly_dispatch_ptdf_hourly_fixed( ...
+            num_ac_total, num_ev_total, P_ac_down_hourly, P_ev_down_hourly, c_ac_down, c_ev_down, P_req_down_hourly, ...
+            n_ac_down_hourly, n_ev_down_hourly, Location_AC, Location_EV, PTDF_matrix, ...
+            P_Line_Base_hourly, P_Line_Max, N_bus, N_line, h);
+        
+        if flag_down > 0
+            % 广播（Repmat）小时级决策
+            U_ac_down_final(:, current_steps_indices) = repmat(u_ac_down_h, 1, current_steps_in_hour);
+            U_ev_down_final(:, current_steps_indices) = repmat(u_ev_down_h, 1, current_steps_in_hour);
+            
+            % 计算每个时间步的功率和成本
+            p_ac_down_h_vec = (u_ac_down_h' * P_ac_down_hourly)';
+            p_ev_down_h_vec = (u_ev_down_h' * P_ev_down_hourly)';
+            P_ac_dispatched_opt_down_t(current_steps_indices) = p_ac_down_h_vec;
+            P_ev_dispatched_opt_down_t(current_steps_indices) = p_ev_down_h_vec;
+            cost_down_final(current_steps_indices) = cost_down_h_total * (p_ac_down_h_vec + p_ev_down_h_vec) / (sum(p_ac_down_h_vec + p_ev_down_h_vec) + eps_val);
+        else
+             cost_down_final(current_steps_indices) = NaN;
+        end
+        % ==================== 【修改结束】 ====================
+
+        % 新增：计算优化后的rho和sdci
+        n_ac_opt_up_t_h = sum(U_ac_up_final(:, current_steps_indices), 1)';
+        n_ev_opt_up_t_h = sum(U_ev_up_final(:, current_steps_indices), 1)';
+        avg_P_ac_opt_up_h = P_ac_dispatched_opt_up_t(current_steps_indices)' ./ (n_ac_opt_up_t_h + eps_val);
+        avg_P_ev_opt_up_h = P_ev_dispatched_opt_up_t(current_steps_indices)' ./ (n_ev_opt_up_t_h + eps_val);
+        sdci_up_opt_hourly(h) = calculateSDCI(n_ac_opt_up_t_h, n_ev_opt_up_t_h, avg_P_ac_opt_up_h, avg_P_ev_opt_up_h);
+        rho_up_opt_hourly(h) = calculateSpearmanRho(n_ac_opt_up_t_h, avg_P_ac_opt_up_h, n_ev_opt_up_t_h, avg_P_ev_opt_up_h);
+
+        n_ac_opt_down_t_h = sum(U_ac_down_final(:, current_steps_indices), 1)';
+        n_ev_opt_down_t_h = sum(U_ev_down_final(:, current_steps_indices), 1)';
+        avg_P_ac_opt_down_h = P_ac_dispatched_opt_down_t(current_steps_indices)' ./ (n_ac_opt_down_t_h + eps_val);
+        avg_P_ev_opt_down_h = P_ev_dispatched_opt_down_t(current_steps_indices)' ./ (n_ev_opt_down_t_h + eps_val);
+        sdci_down_opt_hourly(h) = calculateSDCI(n_ac_opt_down_t_h, n_ev_opt_down_t_h, avg_P_ac_opt_down_h, avg_P_ev_opt_down_h);
+        rho_down_opt_hourly(h) = calculateSpearmanRho(n_ac_opt_down_t_h, avg_P_ac_opt_down_h, n_ev_opt_down_t_h, avg_P_ev_opt_down_h);
+        
+        clear P_ac_up_hourly P_ev_up_hourly P_ac_down_hourly P_ev_down_hourly;
+    end % 结束 for h (小时循环)
+
+    toc(tic_loop);
+    fprintf('分层优化(含PTDF)完成。\n');
+
+    delete(individual_file);
+
+    %% 4. 计算优化前后的SDCI和Rho指标 (不变)
+    fprintf('计算指标 (基于全量数据)...\n');
+    n_ac_raw_t = ones(T,1) * num_ac_total; n_ev_raw_t = ones(T,1) * num_ev_total;
+    if num_ac_total == 0; n_ac_raw_t = zeros(T,1); end; if num_ev_total == 0; n_ev_raw_t = zeros(T,1); end
+
+    AC_Up_Aggregated_Raw = AC_Up_raw'; EV_Up_Aggregated_Raw = EV_Up_raw';
+    AC_Down_Aggregated_Raw = AC_Down_raw'; EV_Down_Aggregated_Raw = EV_Down_raw';
+    Total_Up_Aggregated_Raw = AC_Up_Aggregated_Raw + EV_Up_Aggregated_Raw;
+    Total_Down_Aggregated_Raw = AC_Down_Aggregated_Raw + EV_Down_Aggregated_Raw;
+
+    avg_P_ac_raw_up_t = AC_Up_Aggregated_Raw ./ (n_ac_raw_t + eps_val);
+    avg_P_ev_raw_up_t = EV_Up_Aggregated_Raw ./ (n_ev_raw_t + eps_val);
+    avg_P_ac_raw_down_t = AC_Down_Aggregated_Raw ./ (n_ac_raw_t + eps_val);
+    avg_P_ev_raw_down_t = EV_Down_Aggregated_Raw ./ (n_ev_raw_t + eps_val);
+
+    SDCI_up_raw = ensureScalar(calculateSDCI(n_ac_raw_t, n_ev_raw_t, avg_P_ac_raw_up_t, avg_P_ev_raw_up_t));
+    rho_up_raw  = ensureScalar(calculateSpearmanRho(n_ac_raw_t, avg_P_ac_raw_up_t, n_ev_raw_t, avg_P_ev_raw_up_t));
+    SDCI_down_raw = ensureScalar(calculateSDCI(n_ac_raw_t, n_ev_raw_t, avg_P_ac_raw_down_t, avg_P_ev_raw_down_t));
+    rho_down_raw  = ensureScalar(calculateSpearmanRho(n_ac_raw_t, avg_P_ac_raw_down_t, n_ev_raw_t, avg_P_ev_raw_down_t));
+
+    n_ac_opt_up_count_t = sum(U_ac_up_final, 1)'; n_ev_opt_up_count_t = sum(U_ev_up_final, 1)';
+    n_ac_opt_down_count_t = sum(U_ac_down_final, 1)'; n_ev_opt_down_count_t = sum(U_ev_down_final, 1)';
+    avg_P_ac_opt_up = P_ac_dispatched_opt_up_t' ./ (n_ac_opt_up_count_t + eps_val);
+    avg_P_ev_opt_up = P_ev_dispatched_opt_up_t' ./ (n_ev_opt_up_count_t + eps_val);
+    avg_P_ac_opt_down = P_ac_dispatched_opt_down_t' ./ (n_ac_opt_down_count_t + eps_val);
+    avg_P_ev_opt_down = P_ev_dispatched_opt_down_t' ./ (n_ev_opt_down_count_t + eps_val);
+    SDCI_up_opt = ensureScalar(calculateSDCI(n_ac_opt_up_count_t, n_ev_opt_up_count_t, avg_P_ac_opt_up, avg_P_ev_opt_up));
+    rho_up_opt  = ensureScalar(calculateSpearmanRho(n_ac_opt_up_count_t, avg_P_ac_opt_up, n_ev_opt_up_count_t, avg_P_ev_opt_up));
+    SDCI_down_opt = ensureScalar(calculateSDCI(n_ac_opt_down_count_t, n_ev_opt_down_count_t, avg_P_ac_opt_down, avg_P_ev_opt_down));
+    rho_down_opt  = ensureScalar(calculateSpearmanRho(n_ac_opt_down_count_t, avg_P_ac_opt_down, n_ev_opt_down_count_t, avg_P_ev_opt_down));
+
+    %% 5. 结果分析与可视化 (不变)
+    fprintf('生成可视化图表...\n');
+    time_axis = (1:T)';
+    Total_Up_Optimal_Agg = P_ac_dispatched_opt_up_t' + P_ev_dispatched_opt_up_t';
+    Total_Down_Optimal_Agg = P_ac_dispatched_opt_down_t' + P_ev_dispatched_opt_down_t';
+
+    figure('Position', [100, 100, 1200, 800]);
+    sgtitle(sprintf('VPP 逐时优化结果 (分层GA+MILP N_{total}=%d)', num_ac_total + num_ev_total), 'FontSize', 16);
+    subplot(2,2,1); plot(time_axis, Total_Up_Aggregated_Raw, 'b--', 'LineWidth', 1.5, 'DisplayName', 'Raw Aggregated'); hold on; plot(time_axis, Total_Up_Optimal_Agg, 'r-', 'LineWidth', 1.5, 'DisplayName', 'Optimized (Layered+PTDF)'); plot(time_axis, P_grid_up_demand, 'k:', 'LineWidth', 1, 'DisplayName', 'Up-Regulation Demand'); hold off; title('Up-Regulation Power Comparison'); xlabel('Time Step'); ylabel('Power (kW)'); legend('show', 'Location', 'best'); grid on;
+    subplot(2,2,2); plot(time_axis, Total_Down_Aggregated_Raw, 'b--', 'LineWidth', 1.5, 'DisplayName', 'Raw Aggregated'); hold on; plot(time_axis, Total_Down_Optimal_Agg, 'r-', 'LineWidth', 1.5, 'DisplayName', 'Optimized (Layered+PTDF)'); plot(time_axis, P_grid_down_demand, 'k:', 'LineWidth', 1, 'DisplayName', 'Down-Regulation Demand'); hold off; title('Down-Regulation Power Comparison'); xlabel('Time Step'); ylabel('Power (kW)'); legend('show', 'Location', 'best'); grid on;
+    subplot(2,2,3); indicator_names_up = {'SDCI⁺', 'Spearman ρ⁺'}; values_raw_up = [SDCI_up_raw; rho_up_raw]; values_opt_up = [SDCI_up_opt; rho_up_opt]; bar_data_up = [values_raw_up, values_opt_up]; b_up = bar(bar_data_up); set(gca, 'XTickLabel', indicator_names_up); ylabel('Indicator Value'); ylim([-1.1, 1.1]); legend([b_up(1) b_up(2)], {'Raw Aggregated', 'Optimized (Layered+PTDF)'}, 'Location', 'northoutside', 'Orientation','horizontal'); title('Up-Regulation Complementarity & Correlation'); grid on; add_bar_labels(b_up, bar_data_up);
+    subplot(2,2,4); indicator_names_down = {'SDCI⁻', 'Spearman ρ⁻'}; values_raw_down = [SDCI_down_raw; rho_down_raw]; values_opt_down = [SDCI_down_opt; rho_down_opt]; bar_data_down = [values_raw_down, values_opt_down]; b_down = bar(bar_data_down); set(gca, 'XTickLabel', indicator_names_down); ylabel('Indicator Value'); ylim([-1.1, 1.1]); legend([b_down(1) b_down(2)],{'Raw Aggregated', 'Optimized (Layered+PTDF)'}, 'Location', 'northoutside', 'Orientation','horizontal'); title('Down-Regulation Complementarity & Correlation'); grid on; add_bar_labels(b_down, bar_data_down);
+    
+    % 新增：绘制每一步的rho和sdci值
+    figure('Position', [100, 100, 1200, 800]);
+    sgtitle('Hourly Complementarity and Correlation Metrics', 'FontSize', 16);
+    subplot(2,2,1);
+    plot(1:num_hours, sdci_up_raw_hourly, 'b--', 'DisplayName', 'Raw SDCI+'); hold on;
+    plot(1:num_hours, sdci_up_opt_hourly, 'r-', 'DisplayName', 'Optimized SDCI+');
+    title('Hourly Up-Regulation SDCI'); xlabel('Hour'); ylabel('SDCI'); legend('show'); grid on;
+    subplot(2,2,2);
+    plot(1:num_hours, rho_up_raw_hourly, 'b--', 'DisplayName', 'Raw Rho+'); hold on;
+    plot(1:num_hours, rho_up_opt_hourly, 'r-', 'DisplayName', 'Optimized Rho+');
+    title('Hourly Up-Regulation Rho'); xlabel('Hour'); ylabel('Rho'); legend('show'); grid on;
+    subplot(2,2,3);
+    plot(1:num_hours, sdci_down_raw_hourly, 'b--', 'DisplayName', 'Raw SDCI-'); hold on;
+    plot(1:num_hours, sdci_down_opt_hourly, 'r-', 'DisplayName', 'Optimized SDCI-');
+    title('Hourly Down-Regulation SDCI'); xlabel('Hour'); ylabel('SDCI'); legend('show'); grid on;
+    subplot(2,2,4);
+    plot(1:num_hours, rho_down_raw_hourly, 'b--', 'DisplayName', 'Raw Rho-'); hold on;
+    plot(1:num_hours, rho_down_opt_hourly, 'r-', 'DisplayName', 'Optimized Rho-');
+    title('Hourly Down-Regulation Rho'); xlabel('Hour'); ylabel('Rho'); legend('show'); grid on;
+
+
+    %% 6. 命令行输出汇总 (不变)
+    disp(' ');
+    disp('=== 互补性与相关性指标对比 (分层GA + MILP(含PTDF) 优化) ===');
+    disp('【上调】'); fprintf('优化前 (Raw Aggregated): SDCI⁺ = %.4f, ρ⁺ = %.4f\n', SDCI_up_raw, rho_up_raw); fprintf('优化后 (Layered Opt): SDCI⁺ = %.4f, ρ⁺ = %.4f, 总成本 = %.2f\n', SDCI_up_opt, rho_up_opt, nansum(cost_up_final));
+    disp(' ');
+    disp('【下调】'); fprintf('优化前 (Raw Aggregated): SDCI⁻ = %.4f, ρ⁻ = %.4f\n', SDCI_down_raw, rho_down_raw); fprintf('优化后 (Layered Opt): SDCI⁻ = %.4f, ρ⁻ = %.4f, 总成本 = %.2f\n', SDCI_down_opt, rho_down_opt, nansum(cost_down_final));
+    disp(' ');
+
+end % 结束主函数
+
+%% -----------------------------------------------------------------------
+%                       局部辅助函数
+% ------------------------------------------------------------------------
+% (ensureScalar 和 add_bar_labels 函数保持不变)
+
+%% 局部函数: ensureScalar
+function val = ensureScalar(inputVal)
+    if isscalar(inputVal); val = inputVal;
+    elseif isempty(inputVal); val = NaN;
+    else; val = mean(inputVal(:), 'omitnan'); end
+end
+
+%% 局部函数: add_bar_labels
+function add_bar_labels(bar_handles, bar_data)
+    for k_bar = 1:size(bar_data, 1)
+        for j_bar = 1:size(bar_data, 2)
+             try
+                 if ~ishandle(bar_handles(j_bar)); continue; end
+                 if k_bar > length(bar_handles(j_bar).XData); continue; end
+                 if isnan(bar_data(k_bar, j_bar)); continue; end
+                 
+                text(bar_handles(j_bar).XData(k_bar) + bar_handles(j_bar).XOffset, ...
+                     bar_data(k_bar, j_bar), sprintf('%.3f', bar_data(k_bar, j_bar)), ...
+                     'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', ...
+                     'FontSize', 8, 'Color', 'k');
+             catch
+             end
+        end
+    end
+end
