@@ -165,7 +165,7 @@ function run_scenario_F_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
     %% ================= 独立绘图与保存 =================
     % 通用绘图设置
     font_name = 'Microsoft YaHei'; 
-    font_size = 12;
+    font_size = 14; % 修改：从12增大到14
     
     % --- 图 1: 聚合功率曲线对比 ---
     fig1 = figure('Name', 'F_Power_Curve', 'Color', 'w', 'Position', [100, 100, 600, 400]);
@@ -179,11 +179,12 @@ function run_scenario_F_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
     % 绘制线条 (无约束)
     plot(x, results(1).P_Total, 'r--', 'LineWidth', 1.5, 'DisplayName', 'P_{Total} (未协同)');
     
-    xlabel('时间步', 'FontName', font_name, 'FontSize', font_size); 
-    ylabel('功率(MW)', 'FontName', font_name, 'FontSize', font_size);
-    legend([h_ac, h_tot], {'P_{AC} (协同)', 'P_{Total} (协同)'}, 'Location', 'northwest', 'FontName', font_name);
+    % 修改：增加 FontWeight normal
+    xlabel('时间步', 'FontName', font_name, 'FontSize', font_size, 'FontWeight', 'normal'); 
+    ylabel('功率(MW)', 'FontName', font_name, 'FontSize', font_size, 'FontWeight', 'normal');
+    legend([h_ac, h_tot], {'P_{AC} (协同)', 'P_{Total} (协同)'}, 'Location', 'northwest', 'FontName', font_name, 'FontSize', font_size);
     grid on; box on;
-    set(gca, 'FontName', font_name, 'FontSize', font_size);
+    set(gca, 'FontName', font_name, 'FontSize', font_size, 'FontWeight', 'normal');
     
     % 保存 图1
     print(fig1, '场景F峰值功率对比.png', '-dpng', '-r600');
@@ -201,9 +202,10 @@ function run_scenario_F_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
     b(1).FaceColor = [0.8 0.3 0.3]; % 无约束 (红)
     b(2).FaceColor = [0.3 0.6 0.3]; % 有约束 (绿)
     
-    ylabel('功率值', 'FontName', font_name, 'FontSize', font_size);
-    set(gca, 'XTickLabel', {'峰值功率 (MW)', '波动率 (x10)'}, 'FontName', font_name, 'FontSize', font_size);
-    legend({'未协同', '协同'}, 'Location', 'best', 'FontName', font_name);
+    % 修改：增加 FontWeight normal
+    ylabel('功率值', 'FontName', font_name, 'FontSize', font_size, 'FontWeight', 'normal');
+    set(gca, 'XTickLabel', {'峰值功率 (MW)', '波动率 (x10)'}, 'FontName', font_name, 'FontSize', font_size, 'FontWeight', 'normal');
+    legend({'未协同', '协同'}, 'Location', 'best', 'FontName', font_name, 'FontSize', font_size);
     grid on; box on;
     
     % 数值标注
@@ -211,7 +213,9 @@ function run_scenario_F_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
         xt = b(i).XEndPoints;
         yt = b(i).YEndPoints;
         for j = 1:length(xt)
-            text(xt(j), yt(j), sprintf('%.4f', yt(j)), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 10, 'FontName', font_name);
+            % 修改：FontSize 10->12, 增加 FontWeight normal
+            text(xt(j), yt(j), sprintf('%.4f', yt(j)), 'HorizontalAlignment', 'center', ...
+                'VerticalAlignment', 'bottom', 'FontSize', 12, 'FontName', font_name, 'FontWeight', 'normal');
         end
     end
     
@@ -230,19 +234,22 @@ function run_scenario_F_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
     b_risk.CData(1,:) = [0.8 0.3 0.3]; % 红
     b_risk.CData(2,:) = [0.3 0.6 0.3]; % 绿
     
-    ylabel('CVaR(元)', 'FontName', font_name, 'FontSize', font_size);
-    set(gca, 'XTickLabel', {'未协同', '协同'}, 'FontName', font_name, 'FontSize', font_size);
+    % 修改：增加 FontWeight normal
+    ylabel('CVaR(元)', 'FontName', font_name, 'FontSize', font_size, 'FontWeight', 'normal');
+    set(gca, 'XTickLabel', {'未协同', '协同'}, 'FontName', font_name, 'FontSize', font_size, 'FontWeight', 'normal');
     grid on; box on;
     
     % 数值标注
     xt = b_risk.XEndPoints;
     yt = b_risk.YEndPoints;
-    text(xt(1), yt(1), sprintf('%.4f', yt(1)), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 12, 'FontName', font_name);
-    text(xt(2), yt(2), sprintf('%.4f', yt(2)), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 12, 'FontName', font_name);
+    % 修改：FontSize 12->14, 增加 FontWeight normal
+    text(xt(1), yt(1), sprintf('%.4f', yt(1)), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 14, 'FontName', font_name, 'FontWeight', 'normal');
+    text(xt(2), yt(2), sprintf('%.4f', yt(2)), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 14, 'FontName', font_name, 'FontWeight', 'normal');
     
     % 增加下降箭头或文字说明
     mid_x = mean(xt);
-    text(mid_x, max(yt)*0.5, sprintf('风险减小\n-%.1f%%', imp_cvar), 'HorizontalAlignment', 'center', 'Color', 'b', 'FontWeight', 'bold', 'FontName', font_name);
+    % 修改：移除 FontWeight bold，改为 normal
+    text(mid_x, max(yt)*0.5, sprintf('风险减小\n-%.1f%%', imp_cvar), 'HorizontalAlignment', 'center', 'Color', 'b', 'FontWeight', 'normal', 'FontName', font_name, 'FontSize', 12);
     
     % 保存 图3
     print(fig3, '场景F风险对比.png', '-dpng', '-r600');

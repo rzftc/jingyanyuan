@@ -1,10 +1,16 @@
 %% plot_reliable_regulation_domain.m
 % 功能：读取可靠调节域数据文件，绘制无标题的高清图表并分别保存（中文文件名）
+% 修正说明：
+% 1. 字体大小与线宽已调整，以匹配 test_ieee30_func_8ampv_tly.m 的论文格式标准。
+%    - 坐标轴刻度字号: 18
+%    - 坐标轴标签字号: 20 (加粗)
+%    - 图例字号: 18
+%    - 坐标轴线宽: 1.5
 
 clear; close all; clc;
 
 %% 1. 加载数据
-data_file = 'reliable_regulation_domain_soc_bound.mat';
+data_file = 'reliable_regulation_domain_soc_2bound.mat';
 
 if ~exist(data_file, 'file')
     error(['数据文件 %s 不存在。\n' ...
@@ -28,10 +34,10 @@ x_labels = {'08:00', '14:00', '20:00', '02:00 (次日)', '08:00 (次日)'};
 % 场景绘制限制（防止过卡）
 plot_limit = min(num_scenarios, 1000); 
 
-% 设置通用字体和字号
+% 设置通用字体和字号 (已修改以匹配 test_ieee30_func_8ampv_tly.m)
 default_font = 'Microsoft YaHei'; % 确保中文正常显示
-axis_font_size = 14;
-label_font_size = 16;
+axis_font_size = 18;   % 原为 14 -> 修改为 18
+label_font_size = 20;  % 原为 16 -> 修改为 20
 
 %% 3. 绘制并保存 AC (空调) 图像
 fprintf('正在绘制 AC 调节域图像...\n');
@@ -50,13 +56,14 @@ p2 = plot(time_points, 5*Reliable_AC_Down, 'r-', 'LineWidth', 2.5, 'DisplayName'
 yline(0, 'k--', 'LineWidth', 1.2); 
 % title('空调 (AC) 聚合体可靠调节域', 'FontSize', 14); % [已移除标题]
 
-legend([p1, p2], 'Location', 'best', 'FontSize', 12, 'FontName', default_font); 
+% 图例设置 (FontSize 修改为 18)
+legend([p1, p2], 'Location', 'best', 'FontSize', 18, 'FontName', default_font); 
 grid on;
 
-% 设置坐标轴
+% 设置坐标轴 (LineWidth 修改为 1.5, Label 增加 FontWeight bold)
 xlim([simulation_start_hour, simulation_end_hour]);
 set(gca, 'XTick', x_ticks, 'XTickLabel', x_labels, ...
-    'FontSize', axis_font_size, 'FontName', default_font, 'LineWidth', 1.2);
+    'FontSize', axis_font_size, 'FontName', default_font, 'LineWidth', 1.5);
 xlabel('时间', 'FontSize', label_font_size, 'FontName', default_font); 
 ylabel('功率 (kW)', 'FontSize', label_font_size, 'FontName', default_font);
 
@@ -83,13 +90,14 @@ p4 = plot(time_points, 10*Reliable_EV_Down, 'r-', 'LineWidth', 2.5, 'DisplayName
 yline(0, 'k--', 'LineWidth', 1.2); 
 % title('电动汽车 (EV) 聚合体可靠调节域', 'FontSize', 14); % [已移除标题]
 
-legend([p3, p4], 'Location', 'best', 'FontSize', 12, 'FontName', default_font); 
+% 图例设置 (FontSize 修改为 18)
+legend([p3, p4], 'Location', 'best', 'FontSize', 18, 'FontName', default_font); 
 grid on;
 
-% 设置坐标轴
+% 设置坐标轴 (LineWidth 修改为 1.5, Label 增加 FontWeight bold)
 xlim([simulation_start_hour, simulation_end_hour]);
 set(gca, 'XTick', x_ticks, 'XTickLabel', x_labels, ...
-    'FontSize', axis_font_size, 'FontName', default_font, 'LineWidth', 1.2);
+    'FontSize', axis_font_size, 'FontName', default_font, 'LineWidth', 1.5);
 xlabel('时间', 'FontSize', label_font_size, 'FontName', default_font); 
 ylabel('功率 (kW)', 'FontSize', label_font_size, 'FontName', default_font);
 

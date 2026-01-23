@@ -456,7 +456,6 @@ run_scenario_G_comparison(beta_for_G, Max_Iter, N_scenarios, N_bus, N_line, dt, 
     Reliable_AC_Base, Reliable_EV_Base, ...
     R_Gen_Max, R_Shed_Max, cost_params, net_params, direction_signal, options);
 %% 6. 运行场景 H: 传统鲁棒优化 vs CVaR随机优化 对比验证
-% 设定一个用于对比的风险厌恶系数，通常与场景G或F保持一致
 beta_for_H = 10; 
 
 run_scenario_H_robust_comparison(beta_for_H, N_scenarios, N_bus, N_line, dt, ...

@@ -121,19 +121,32 @@ function run_scenario_E_tly(P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
         fig_conf = figure('Name', '场景E_置信度影响', 'Color', 'w', 'Position', [600, 100, 700, 450]);
         yyaxis left;
         b = bar(categorical(confs), e_total_cost, 0.5, 'FaceColor', [0.2 0.6 0.8]);
-        ylabel('系统总运行成本 (元)', 'FontSize', 12, 'FontName', 'Microsoft YaHei');
+        
+        % 修改：FontSize 12->14, 增加 FontWeight normal
+        ylabel('系统总运行成本 (元)', 'FontSize', 14, 'FontName', 'Microsoft YaHei', 'FontWeight', 'normal');
+        
         ylim([min(e_total_cost)*0.9, max(e_total_cost)*1.1]);
         for i = 1:length(e_total_cost)
+            % 修改：FontSize 10->12, 增加 FontWeight normal
             text(i, e_total_cost(i), sprintf('%.0f', e_total_cost(i)), ...
                  'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', ...
-                 'FontSize', 10, 'Color', 'b');
+                 'FontSize', 12, 'Color', 'b', 'FontWeight', 'normal');
         end
         yyaxis right;
         plot(1:num_conf, e_slack_sum, 'r-^', 'LineWidth', 2, 'MarkerSize', 8, 'MarkerFaceColor', 'r');
-        ylabel('火电与切负荷调用量 (MWh)', 'FontSize', 12, 'FontName', 'Microsoft YaHei');
+        
+        % 修改：FontSize 12->14, 增加 FontWeight normal
+        ylabel('火电与切负荷调用量 (MWh)', 'FontSize', 14, 'FontName', 'Microsoft YaHei', 'FontWeight', 'normal');
+        
         ax = gca; ax.YColor = 'r';
-        xlabel('置信水平 \alpha (可靠性要求)', 'FontSize', 12, 'FontName', 'Microsoft YaHei');
-        legend({'运行成本', '备用资源调用'}, 'Location', 'northwest', 'FontSize', 11);
+        % 修改：设置全局坐标轴字体 14号，不加粗
+        set(ax, 'FontSize', 14, 'FontName', 'Microsoft YaHei', 'FontWeight', 'normal');
+        
+        % 修改：FontSize 12->14, 增加 FontWeight normal
+        xlabel('置信水平 \alpha (可靠性要求)', 'FontSize', 14, 'FontName', 'Microsoft YaHei', 'FontWeight', 'normal');
+        
+        % 修改：FontSize 11->13
+        legend({'运行成本', '备用资源调用'}, 'Location', 'northwest', 'FontSize', 13);
         grid on;
         print(fig_conf, '置信水平经济性分析.png', '-dpng', '-r300');
     end

@@ -203,12 +203,12 @@ function run_scenario_H_robust_comparison(beta_val, N_scenarios, N_bus, N_line, 
     b.FaceColor = 'flat';
     b.CData(1,:) = [0.6 0.6 0.6]; % 灰色代表保守的鲁棒
     b.CData(2,:) = [0.2 0.6 0.8]; % 蓝色代表本文方法
-    ylabel('系统运行成本 (元)', 'FontName', 'Microsoft YaHei', 'FontSize', 12);
-    set(gca, 'XTickLabel', {'鲁棒优化', 'CVaR调度'}, 'FontName', 'Microsoft YaHei', 'FontSize', 12);
+    ylabel('系统运行成本 (元)', 'FontName', 'Microsoft YaHei', 'FontSize', 14); % 字体放大 12->14
+    set(gca, 'XTickLabel', {'鲁棒优化', 'CVaR调度'}, 'FontName', 'Microsoft YaHei', 'FontSize', 14); % 字体放大 12->14
     grid on;
     % 添加数值标签
-    if ~isnan(cost_rob), text(1, cost_rob, sprintf('%.0f', cost_rob), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 11); end
-    if ~isnan(cost_cvar), text(2, cost_cvar, sprintf('%.0f', cost_cvar), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 11); end
+    if ~isnan(cost_rob), text(1, cost_rob, sprintf('%.0f', cost_rob), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 13); end % 字体放大 11->13
+    if ~isnan(cost_cvar), text(2, cost_cvar, sprintf('%.0f', cost_cvar), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 13); end % 字体放大 11->13
     
     print(fig_h1, '场景H_鲁棒与CVaR成本对比.png', '-dpng', '-r600');
     
@@ -246,16 +246,16 @@ function run_scenario_H_robust_comparison(beta_val, N_scenarios, N_bus, N_line, 
         y_fill = [P_Real_Rob', fliplr(P_Real_CVaR')];
         fill(x_fill, y_fill, [0.2 0.6 0.8], 'FaceAlpha', 0.15, 'EdgeColor', 'none', 'DisplayName', '释放的调节潜力');
 
-        ylabel('VPP 实际调度功率 (MW)', 'FontName', 'Microsoft YaHei', 'FontSize', 12);
-        xlabel('时刻', 'FontName', 'Microsoft YaHei', 'FontSize', 12);
+        ylabel('VPP 实际调度功率 (MW)', 'FontName', 'Microsoft YaHei', 'FontSize', 14); % 字体放大 12->14
+        xlabel('时刻', 'FontName', 'Microsoft YaHei', 'FontSize', 14); % 字体放大 12->14
         
         % 设置 X 轴刻度 (8:00 到 次日 8:00)
         xlim([8, 32]);
         set(gca, 'XTick', [8, 12, 16, 20, 24, 28, 32]);
-        set(gca, 'XTickLabel', {'08:00', '12:00', '16:00', '20:00', '00:00', '04:00', '08:00'}, 'FontSize', 11);
+        set(gca, 'XTickLabel', {'08:00', '12:00', '16:00', '20:00', '00:00', '04:00', '08:00'}, 'FontSize', 13); % 字体放大 11->13
         
-        legend([h1, h2, h3], 'Location', 'best', 'FontName', 'Microsoft YaHei');
-        grid on;
+        legend([h1, h2, h3], 'Location', 'best', 'FontName', 'Microsoft YaHei', 'FontSize', 12); % 新增字号设置
+        grid off; % 【修改点】去掉网格线
         
         print(fig_h2, '场景H_调度策略与边界对比.png', '-dpng', '-r600');
     end
