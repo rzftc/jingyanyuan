@@ -6,7 +6,7 @@
 clear; close all; clc;
 
 %% 1. 加载数据
-data_file = 'reliable_regulation_domain_1000_mix_pbase_8am.mat';
+data_file = 'reliable_regulation_domain_soc_2bound_avg.mat';
 
 if ~exist(data_file, 'file')
     error(['数据文件 %s 不存在。\n' ...
@@ -72,11 +72,11 @@ fprintf('正在处理EV时段约束：上调(8:00-18:00置零)，下调(8:00-12:
 
 % 1. 处理上调 (EV Up): 8:00 到 18:00 置为 0
 % 注意：new_time_points 已经是 0-24 的时间轴
-idx_ev_up_zero = find(new_time_points >= 8 & new_time_points <= 18);
+idx_ev_up_zero = find(new_time_points >= 8 & new_time_points <= 15);
 EV_Up_Shifted(idx_ev_up_zero, :) = 0;
 
 % 2. 处理下调 (EV Down): 8:00 到 12:00 置为 0
-idx_ev_down_zero = find(new_time_points >= 8 & new_time_points <= 12);
+idx_ev_down_zero = find(new_time_points >= 8 & new_time_points <= 15);
 EV_Down_Shifted(idx_ev_down_zero, :) = 0;
 
 %% 4. 计算概率边界 (Reliable Boundaries)

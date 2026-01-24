@@ -10,7 +10,7 @@
 clear; close all; clc;
 
 %% 1. 加载数据
-data_file = 'reliable_regulation_domain_soc_2bound.mat';
+data_file = 'reliable_regulation_domain_soc_2bound_avg.mat';
 
 if ~exist(data_file, 'file')
     error(['数据文件 %s 不存在。\n' ...
