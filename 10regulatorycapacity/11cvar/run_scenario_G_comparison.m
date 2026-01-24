@@ -9,7 +9,7 @@ function run_scenario_G_comparison(beta_val, Max_Iter, N_scenarios, N_bus, N_lin
     T_steps = length(P_grid_demand);
     
     % [修改 1] 定义统一的违约惩罚价格 (元/MW)，用于统一量纲
-    rho_price = 120000; 
+    rho_price = 100000; 
     %% 1. 运行确定性优化 (Deterministic Dispatch)
     conservative_factor = 1; 
     
