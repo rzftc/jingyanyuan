@@ -1,1 +1,107 @@
-虚拟电厂调节能力分析与优化系统 (VPP Regulatory Capacity Analysis System)这是一个基于 MATLAB 的综合仿真与分析平台，旨在评估、预测和优化由 空调 (AC) 和 电动汽车 (EV) 构成的虚拟电厂 (VPP) 的电网调节能力。该项目涵盖了从底层物理建模、用户行为不确定性分析、大规模蒙特卡洛模拟到上层风险约束优化调度的全过程。📁 目录结构与功能模块代码库按照功能逻辑划分为多个子文件夹，核心模块说明如下：基础数据与建模0input_data/: 数据生成器。包含生成 AC/EV 基础参数（额定功率、电池容量、热力学参数）和行为模式（出行时间、设定温度）的脚本，支持 Excel 导出。核心脚本: generateACParameters.m, generateEVData.m1initialize/: 初始化接口。负责读取 Excel 配置文件并实例化 MATLAB 结构体对象。2AC/: 空调物理模型。基于一阶等效热参数模型 (ETP)，包含状态方程更新、聚合参数 (A, B, C) 计算及 PI 控制逻辑。3EV/: 电动汽车物理模型。包含 SOC 状态演化、基线充电功率计算、充放电死区及灵活性潜力评估逻辑。5userUncertainties/: 用户行为模型。包含基于激励电价的用户响应概率模型 (Price-Incentive Response)。预测与分析核心9predict/: 规模预测模块。集成多种算法：Bass 扩散模型、Logistic 模型、ARIMA、灰色预测 GM(1,1)、随机森林 (Random Forest)、支持向量回归 (SVR)。用于预测未来年份（至 2040 年）省/节点级的设备保有量。10spaceRelation/: 空间特性分析。基于地理信息分析设备在不同功能区（居民区、工作区等）的分布特征。6SensAnalyses/: 灵敏度分析。评估激励价格变化对聚合调节潜力的影响。仿真与优化调度7main/: 仿真主程序。AC_main_Stateful_Simulation.m: 执行 AC 集群的状态化时序仿真，生成调节潜力基线。AC_Result_Plotter*.m: 包含丰富的绘图工具，用于可视化仿真结果。4analysis/ & 4.1analysis/: 确定性优化求解。包含 贪心算法 (Greedy)、遗传算法 (GA)、混合整数线性规划 (MILP)。引入 PTDF (功率传输分布因子) 矩阵处理网络潮流约束。考虑成本最小化与互补性指标 (SDCI, Rho) 的多目标优化。11cvar/: 风险约束随机优化 (核心)。CVaR 模型: 基于条件风险价值的随机规划，量化调节缺额风险。鲁棒优化: 包含与传统鲁棒优化的对比分析 (run_scenario_H_robust_comparison.m)。场景生成: 基于蒙特卡洛模拟生成大量不确定性场景。🚀 核心算法与技术亮点物理驱动的聚合建模:AC: 实现了基于状态一致性的聚合模型，将成千上万台空调的异构参数映射为统一的 S(t+1) = A*S(t) + B*P(t) + C 状态空间方程。EV: 考虑出行链约束和电池物理特性的能量边界模型。多层级优化架构:上层 (GA): 优化参与调节的设备组合，平衡系统经济性与调节指标（SDCI/Rho）。下层 (MILP/Greedy): 在满足网络潮流 (PTDF) 和物理约束的前提下，进行精确的功率分配。风险管理:引入 CVaR (Conditional Value at Risk) 理论，在调度策略中显式考虑极端场景下的违约风险，平衡经济性与可靠性。🛠️ 环境要求与安装基础环境MATLAB: 推荐 R2020b 或更高版本。必需工具箱 (Toolboxes)为确保所有脚本正常运行，请安装以下工具箱：Optimization Toolbox: 用于 linprog, intlinprog, quadprog 等求解器。Global Optimization Toolbox: 用于 ga (遗传算法)。Statistics and Machine Learning Toolbox: 用于 TreeBagger (随机森林), fitrsvm (SVR) 及相关统计函数。Econometrics Toolbox: 用于 arima (时间序列预测)。可选求解器IBM CPLEX: 代码中部分高级调度脚本（如 solve_deterministic_dispatch.m 中的 MILP 问题）预留了 CPLEX 接口。如果未安装，代码通常会回退到 MATLAB 内置求解器或需要手动调整选项。📈 使用指南与工作流程 (Workflow)建议按照以下逻辑顺序运行项目代码：步骤 1: 数据准备与预测运行 0input_data/generateExampleExcel_real_24.m 生成初始的设备参数 Excel 文件。(可选) 运行 9predict/predict_node_level_new.m 预测未来的设备规模增长趋势。步骤 2: 物理仿真与潜力评估运行 7main/经研院代码/AC_main_Stateful_Simulation.m。该脚本将读取 Excel 数据，执行时序仿真，计算聚合调节潜力（上/下调边界）。结果将保存为 .mat 文件，供后续优化使用。步骤 3: 场景生成与风险建模运行 11cvar/main_scenario_generation_soc.m。基于蒙特卡洛方法生成大量随机场景，提取可靠调节域。步骤 4: 优化调度VPP 调度: 运行 4.1analysis/main_vpp_optimizer.m。加载分块仿真结果，执行考虑网络约束的优化调度。风险分析: 运行 11cvar/run_scenario_H_robust_comparison.m。对比 CVaR 随机优化与传统鲁棒优化的经济性和安全性。📊 关键指标说明指标全称说明SDCISigned Direct Complementarity Index同向互补性指数。衡量 AC 和 EV 在同一调节方向（如同为削峰）上的能力互补程度。RhoSpearman's Rank Correlation斯皮尔曼秩相关系数。评估 AC 和 EV 调节潜力在时间序列上的相关性趋势。CVaRConditional Value at Risk条件风险价值。用于量化尾部风险（极端场景下的调节缺额）。📝 注意事项并行计算: 仿真脚本广泛使用了 parfor。建议在运行前使用 parpool 开启 MATLAB 并行池，以显著提高计算速度。路径设置: 请确保所有子文件夹（如 1initialize, 2AC 等）都已添加到 MATLAB 的搜索路径中，或者在根目录下运行脚本。数据文件: 示例 Excel 文件通常生成在 0input_data 目录下，主程序读取时请确认文件名一致。
+# 用户侧柔性资源调节能力评估与虚拟电厂(VPP)仿真系统
+
+## 项目简介
+
+本项目是一个基于 MATLAB 开发的综合仿真平台，旨在评估和优化用户侧分布式资源（主要是空调系统 AC 和电动汽车 EV）的调节潜力。系统集成了资源建模、不确定性分析、空间特性分析、风险约束优化（CVaR）以及规模预测等模块，用于支持虚拟电厂（VPP）的聚合调度策略研究。
+
+主要功能包括：
+
+- **资源建模**：精细化的空调（热力学模型）和电动汽车（出行与充电行为）负荷建模。
+- **调节能力评估**：计算不同激励和价格信号下的聚合调节功率（上调/下调）。
+- **优化调度**：基于遗传算法（GA）和贪心算法的日前/实时调度优化。
+- **风险管理**：引入条件风险价值（CVaR）评估调度策略在不确定性下的风险。
+- **空间分析**：分析资源在不同功能区域的空间分布特性。
+- **趋势预测**：利用机器学习（随机森林、SVR）和统计模型预测负荷及设施规模增长。
+
+## 目录结构说明
+
+代码库主要包含以下模块目录：
+
+### 1. 数据与初始化
+
+- **`0input_data/`**: 负责生成仿真所需的原始数据。
+   - 包含生成空调参数 (`generateACParameters.m`) 和电动汽车出行数据 (`generateEVData.m`) 的脚本。
+
+- **`1initialize/`**: 初始化脚本。
+   - 从Excel读取数据并初始化对象结构体 (`initializeACsFromExcel.m`, `initializeEVsFromExcel.m`)。
+   - 生成小时级调节信号。
+
+### 2. 核心资源模型
+
+- **`2AC/` (空调模块)**:
+   - 包含单体空调的热力学仿真、状态更新、基线功率计算及调节潜力计算 (`calculateACAdjustmentPotentia.m`)。
+   - 支持蒙特卡洛模拟 (`run_AC_simulation_MC.m`)。
+
+- **`3EV/` (电动汽车模块)**:
+   - 模拟EV的充电行为、SOC变化及响应激励的潜力 (`calculateEVAdjustmentPotentia.m`)。
+   - 包含不同充电策略的基线模拟。
+
+### 3. 优化与分析算法
+
+- **`4analysis/`**: 核心优化算法库。
+   - **算法**: 包含遗传算法 (GA) (`run_hourly_GA_PTDF.m`) 和贪心算法 (`solve_hourly_dispatch_greedy.m`) 的实现。
+   - **功能**: 求解小时级调度、计算SDCI指标、处理非线性约束和目标函数。
+   - **电网约束**: 包含基于PTDF（功率传输分布因子）的潮流约束计算。
+
+- **`4.1analysis/`**: VPP层面的高级分析。
+   - 多目标优化 (`main_vpp_optimizer_multi_objective.m`) 和结果度量计算。
+
+- **`11cvar/` (风险分析)**:
+   - 基于CVaR（条件风险价值）的风险约束优化。
+   - 包含IEEE 30节点系统的案例分析 (`case_ieee30.m`)。
+   - 处理随机场景生成与鲁棒性比较。
+
+### 4. 辅助分析模块
+
+- **`10spaceRelation/` (空间分析)**:
+   - 分析资源在不同功能区域（如居住区、商业区）的空间分布概率 (`analyzeACSpatialCharacteristics.m`)。
+
+- **`5userUncertainties/` (用户不确定性)**:
+   - 模拟用户参与度和对激励信号的响应不确定性 (`calculateParticipation.m`)。
+
+- **`6SensAnalyses/` (灵敏度分析)**:
+   - 分析调节能力对各种参数变化的灵敏度并绘图。
+
+- **`9predict/` (预测模块)**:
+   - 多种预测算法实现：ARIMA, Gompertz, Grey Prediction (GM1.1), Random Forest, SVR。
+   - 用于预测节点级别的负荷或设施规模增长。
+
+### 5. 主程序与可视化
+
+- **`7main/`**: 项目的入口脚本和结果绘图。
+   - `AC_Error_Analysis_Main.m`: 误差分析主程序。
+   - `AC_Result_Plotter.m`: 仿真结果可视化工具。
+   - 包含多个场景的运行脚本 (如 `AC_main_1_inc_pi.m`)。
+
+## 环境依赖
+
+- **MATLAB**: 推荐 R2020b 或更高版本。
+- **工具箱**:
+   - Optimization Toolbox (用于优化求解)
+   - Statistics and Machine Learning Toolbox (用于预测和蒙特卡洛模拟)
+   - Global Optimization Toolbox (如果使用了特定的GA函数)
+   - Parallel Computing Toolbox (可选，用于加速蒙特卡洛模拟)
+
+## 快速开始
+
+1. **数据准备**:
+运行 `0input_data` 下的脚本生成基础参数文件，或者确保 Excel 输入文件已存在。
+2. **运行单次仿真**:
+进入 `7main` 目录，运行 `AC_main_1_inc_pi.m` (或其他 `_main` 结尾的脚本) 来执行一次标准的空调调节潜力仿真。
+3. **运行风险分析**:
+进入 `11cvar` 目录，运行 `main_scenario_generation_soc.m` 生成场景，随后运行 `run_AC_simulation_MC_soc.m` 进行蒙特卡洛模拟。
+4. **查看结果**:
+使用 `7main/AC_Result_Plotter.m` 或各个模块自带的 `plot_*.m` 脚本查看生成的图表。
+
+## 核心算法简介
+
+- **蒙特卡洛模拟 (MCS)**: 用于处理用户行为（如EV到达时间、AC设定温度）的随机性，生成大量场景以评估聚合潜力的概率分布。
+- **遗传算法 (GA)**: 用于解决非凸、非线性的调度优化问题，特别是在考虑复杂的用户响应模型时。
+- **CVaR 风险度量**: 在优化目标中加入 Conditional Value at Risk，以平衡调度收益与极端情况下的违约风险。
+
+## 注意事项
+
+- 代码中包含部分硬编码的路径（如Excel文件读取），请根据实际运行环境修改 `1initialize` 中的文件路径。
+- `copyMFiles.m` 是一个辅助工具脚本，用于整理代码文件，非核心逻辑。
+
+*本文档由自动化工具根据代码库内容生成。*
