@@ -13,7 +13,7 @@ clear; close all; clc;
 
 %% ================= 1. 全局初始化与数据清洗 =================
 fprintf('正在加载场景数据...\n');
-data_file = 'reliable_regulation_domain_soc_2bound.mat';
+data_file = 'reliable_regulation_domain_soc_2bound_avg.mat';
 if ~exist(data_file, 'file')
     error('数据文件缺失！请先运行 main_scenario_generation_diff_mix.m');
 end
@@ -445,9 +445,9 @@ beta_for_comparison = 5;
 run_scenario_F_comparison(beta_for_comparison, 2, N_scenarios, N_bus, N_line, dt, ...
     P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
     Effective_Reliable_AC, Effective_Reliable_EV, ... % <--- 注意：这里使用可靠边界！
-    R_Gen_Max, R_Shed_Max, cost_params, net_params, direction_signal, 100, 100, options);
+    R_Gen_Max, R_Shed_Max, cost_params, net_params, direction_signal, 950, 950, options);
 %% 5. 运行场景 G: 确定性 vs 随机优化 效益对比分析
-beta_for_G = 2.7; 
+beta_for_G = 1.5; 
 
 run_scenario_G_comparison(beta_for_G, Max_Iter, N_scenarios, N_bus, N_line, dt, ...
     P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
