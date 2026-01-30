@@ -5,7 +5,7 @@
 % 2. 绘制2030年详细图 (任务一)。
 % 3. 绘制2030-2040年趋势对比图 (任务二)。
 % 4. 【优化风格 V2】：
-%    - 字体: 'Arial'
+%    - 字体: 'Arial' (此处代码实际指定为 'Yahei' 以支持中文)
 %    - 字体大小: 增大 (14pt 标签, 12pt 刻度)
 %    - 【修改】颜色: 优化后的数据使用亮色，参考线使用黑色。
 %    - 【修改】线条:
@@ -17,6 +17,7 @@
 %    - 图例: 无边框，放置在左上角
 %    - 网格: 仅 Y 轴, 浅色
 % 5. 【保留】：横坐标维持 "Day 1 6:00" 到 "Day 2 6:00"
+% 6. 【新增】：所有绘图数据除以10，保存为PNG格式。
 
 clear; close all; clc;
 
@@ -56,7 +57,7 @@ fprintf('绘图将使用字体: %s\n', font_name);
 % 任务一 (2030年详细图)
 color_optimized_up = [0.0, 0.447, 0.741];   % 蓝色
 color_optimized_down = [0.850, 0.325, 0.098]; % 橙色
-color_demand_and_potential = [0, 0, 0];     % 黑色
+color_demand_and_potential = [0, 0, 0];      % 黑色
 
 % 任务二 (跨年份对比 - 保留)
 color_comparison = [
@@ -105,22 +106,22 @@ try
     
     hold(ax1, 'on');
     
-    % 【V2 优化】图层 1: 系统总潜力 (使用黑色细点线)
-    plot(ax1, time_axis_absolute, data2030.P_potential_total, ...
+    % 【V2 优化】图层 1: 系统总潜力 (使用黑色细点线) - 【修改：除以10】
+    plot(ax1, time_axis_absolute, data2030.P_potential_total / 10, ...
         'LineWidth', 1.0, ...
         'Color', color_demand_and_potential, ...
         'LineStyle', ':', ... % Dotted line
         'DisplayName', '系统总潜力');
     
-    % 【V2 优化】图层 2: 电网需求 (使用黑色中等虚线)
-    plot(ax1, time_axis_absolute, data2030.P_req, ...
+    % 【V2 优化】图层 2: 电网需求 (使用黑色中等虚线) - 【修改：除以10】
+    plot(ax1, time_axis_absolute, data2030.P_req / 10, ...
         'LineWidth', 1.2, ...
         'Color', color_demand_and_potential, ...
         'LineStyle', '--', ... % Dashed line
         'DisplayName', '电网需求');
         
-    % 【V2 优化】图层 3: 优化调度出力 (使用蓝色粗实线，放在最上层)
-    plot(ax1, time_axis_absolute, data2030.p_opt_t, ...
+    % 【V2 优化】图层 3: 优化调度出力 (使用蓝色粗实线，放在最上层) - 【修改：除以10】
+    plot(ax1, time_axis_absolute, data2030.p_opt_t / 10, ...
         'LineWidth', 2.0, ...
         'Color', color_optimized_up, ...
         'LineStyle', '-', ...
@@ -160,9 +161,9 @@ try
     end
     set(ax1, 'XTick', xticks_to_set, 'XTickLabel', xtick_labels_to_set);
     
-    % 保存图像
-    output_filename1 = 'VPP_Up_Regulation_2030_OptimalStyle_V2.fig';
-    print(fig1, output_filename1, '-dfig', sprintf('-r%d', dpi));
+    % 保存图像 - 【修改：PNG格式】
+    output_filename1 = 'VPP_Up_Regulation_2030_OptimalStyle_V2.png';
+    print(fig1, output_filename1, '-dpng', sprintf('-r%d', dpi));
     fprintf('  上调能力图已保存为: %s\n', output_filename1);
 catch ME
     fprintf('*** 绘制2030年上调图时出错: %s ***\n', ME.message);
@@ -181,22 +182,22 @@ try
     
     hold(ax2, 'on');
     
-    % 【V2 优化】图层 1: 系统总潜力 (使用黑色细点线)
-    plot(ax2, time_axis_absolute, data2030.P_potential_total, ...
+    % 【V2 优化】图层 1: 系统总潜力 (使用黑色细点线) - 【修改：除以10】
+    plot(ax2, time_axis_absolute, data2030.P_potential_total / 10, ...
         'LineWidth', 1.0, ...
         'Color', color_demand_and_potential, ...
         'LineStyle', ':', ... % Dotted line
         'DisplayName', '系统总潜力');
     
-    % 【V2 优化】图层 2: 电网需求 (使用黑色中等虚线)
-    plot(ax2, time_axis_absolute, data2030.P_req, ...
+    % 【V2 优化】图层 2: 电网需求 (使用黑色中等虚线) - 【修改：除以10】
+    plot(ax2, time_axis_absolute, data2030.P_req / 10, ...
         'LineWidth', 1.2, ...
         'Color', color_demand_and_potential, ...
         'LineStyle', '--', ... % Dashed line
         'DisplayName', '电网需求');
         
-    % 【V2 优化】图层 3: 优化调度出力 (使用橙色粗实线)
-    plot(ax2, time_axis_absolute, data2030.p_opt_t, ...
+    % 【V2 优化】图层 3: 优化调度出力 (使用橙色粗实线) - 【修改：除以10】
+    plot(ax2, time_axis_absolute, data2030.p_opt_t / 10, ...
         'LineWidth', 2.0, ...
         'Color', color_optimized_down, ...
         'LineStyle', '-', ...
@@ -236,9 +237,9 @@ try
     end
     set(ax2, 'XTick', xticks_to_set, 'XTickLabel', xtick_labels_to_set);
 
-    % 保存图像
-    output_filename2 = 'VPP_Down_Regulation_2030_OptimalStyle_V2.fig';
-    print(fig2, output_filename2, '-dfig', sprintf('-r%d', dpi));
+    % 保存图像 - 【修改：PNG格式】
+    output_filename2 = 'VPP_Down_Regulation_2030_OptimalStyle_V2.png';
+    print(fig2, output_filename2, '-dpng', sprintf('-r%d', dpi));
     fprintf('  下调能力图已保存为: %s\n\n', output_filename2);
 catch ME
      fprintf('*** 绘制2030年下调图时出错: %s ***\n\n', ME.message);
@@ -267,8 +268,8 @@ try
             sim_end_absolute_hour = time_axis_common_abs(end); 
         end
         
-        % 【优化】线条加粗
-        plot(ax3, time_axis_absolute, data.p_opt_t, 'LineWidth', 1.8, 'Color', color_comparison(i,:));
+        % 【优化】线条加粗 - 【修改：除以10】
+        plot(ax3, time_axis_absolute, data.p_opt_t / 10, 'LineWidth', 1.8, 'Color', color_comparison(i,:));
         legend_entries_up{end+1} = sprintf('%d年', years(i));
     end
     hold(ax3, 'off');
@@ -307,9 +308,9 @@ try
     end
     set(ax3, 'XTick', xticks_to_set, 'XTickLabel', xtick_labels_to_set);
 
-    % 保存图像
-    output_filename3 = 'VPP_Up_Comparison_2030-2040_OptimalStyle_V2.fig';
-    print(fig3, output_filename3, '-dfig', sprintf('-r%d', dpi));
+    % 保存图像 - 【修改：PNG格式】
+    output_filename3 = 'VPP_Up_Comparison_2030-2040_OptimalStyle_V2.png';
+    print(fig3, output_filename3, '-dpng', sprintf('-r%d', dpi));
     fprintf('  上调能力对比图已保存为: %s\n', output_filename3);
 catch ME
     fprintf('*** 绘制多年上调对比图时出错: %s ***\n', ME.message);
@@ -326,16 +327,16 @@ try
     
     for i = 1:length(years)
         data = plotDataAllYears{i}.Down;
-         
+          
         % 【保留】转换为绝对时间
         time_axis_absolute = (data.time_axis - 1) * dt + simulation_start_hour;
         if isempty(time_axis_common_abs)
             time_axis_common_abs = time_axis_absolute;
             sim_end_absolute_hour = time_axis_common_abs(end); 
         end
-         
-        % 【优化】线条加粗
-        plot(ax4, time_axis_absolute, data.p_opt_t, 'LineWidth', 1.8, 'Color', color_comparison(i,:));
+          
+        % 【优化】线条加粗 - 【修改：除以10】
+        plot(ax4, time_axis_absolute, data.p_opt_t / 10, 'LineWidth', 1.8, 'Color', color_comparison(i,:));
         legend_entries_down{end+1} = sprintf('%d年', years(i));
     end
     hold(ax4, 'off');
@@ -374,9 +375,9 @@ try
     end
     set(ax4, 'XTick', xticks_to_set, 'XTickLabel', xtick_labels_to_set);
     
-    % 保存图像
-    output_filename4 = 'VPP_Down_Comparison_2030-2040_OptimalStyle_V2.fig';
-    print(fig4, output_filename4, '-dfig', sprintf('-r%d', dpi));
+    % 保存图像 - 【修改：PNG格式】
+    output_filename4 = 'VPP_Down_Comparison_2030-2040_OptimalStyle_V2.png';
+    print(fig4, output_filename4, '-dpng', sprintf('-r%d', dpi));
     fprintf('  下调能力对比图已保存为: %s\n', output_filename4);
 catch ME
     fprintf('*** 绘制多年下调对比图时出错: %s ***\n', ME.message);
