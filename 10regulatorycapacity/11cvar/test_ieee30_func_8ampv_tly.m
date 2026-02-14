@@ -461,6 +461,21 @@ beta_for_H = 10;
 run_scenario_H_robust_comparison(beta_for_H, N_scenarios, N_bus, N_line, dt, ...
     P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
     R_Gen_Max, R_Shed_Max, cost_params, net_params, direction_signal, options);
+
+%% 7. 运行场景 I: 协同惩罚权重灵敏度分析
+fprintf('\n>>> 启动场景 I: 协同惩罚权重灵敏度分析 <<<\n');
+
+% 设置参数
+beta_fixed_I = 3;                     % 固定风险厌恶系数
+lambda_list_I = [1, 10, 20, 30, 40, 50]; % 扫描的权重范围
+Max_Iter_I = 3;                        % 迭代次数，保证收敛
+
+% 调用函数
+run_scenario_I_lambda_sensitivity(beta_fixed_I, lambda_list_I, Max_Iter_I, ...
+    N_scenarios, N_bus, N_line, dt, ...
+    P_grid_demand, Scenarios_AC_Up, Scenarios_EV_Up, ...
+    Effective_Reliable_AC, Effective_Reliable_EV, ... 
+    R_Gen_Max, R_Shed_Max, cost_params, net_params, direction_signal, options);
 %% --- 辅助函数：模拟钟形曲线 ---
 function y = beta_pdf_proxy(x, a, b)
     if x < 0 || x > 1
